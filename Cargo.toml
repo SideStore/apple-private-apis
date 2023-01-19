@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "omnisette",
+    "icloud-auth",
+    "apple-dev-apis"
+]
