@@ -66,6 +66,7 @@ pub struct ChallengeRequest {
 
 #[derive(Clone)]
 pub struct AppleAccount {
+    //TODO: move this to omnisette
     pub anisette: AnisetteData,
     pub spd: Option<plist::Dictionary>,
 }
@@ -92,7 +93,7 @@ pub struct Verify2FA {
 
 impl Send2FAToDevices {
     pub fn send_2fa_to_devices(&self) -> LoginResponse {
-        let mut client = self.account.clone();
+        let client = self.account.clone();
         let response = client.send_2fa_to_devices();
         if response.is_ok() {
             LoginResponse::Needs2FAVerification(Verify2FA {
@@ -144,6 +145,7 @@ impl AppleAccount {
     /// );
     /// ```
     /// Note: You would not provide the 2FA code like this, you would have to actually ask input for it.
+    //TODO: add login_with_anisette and login, where login autodetcts anisette
     pub fn login<F: Fn() -> (String, String), G: Fn() -> String>(
         appleid_closure: F,
         tfa_closure: G,
