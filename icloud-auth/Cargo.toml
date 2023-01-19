@@ -10,7 +10,7 @@ ureq = { version = "2.5.0", features = ["json"] }
 serde = { version = "1.0.147", features = ["derive"] }
 serde_json = { version = "1.0.87" }
 base64 = "0.13.1"
-srp = { version = "0.6.0", path = "./rustcrypto/srp" }
+srp = { version = "0.6.0", path = "./rustcrypto-srp" }
 pbkdf2 = { version = "0.11.0" }
 sha2 = { version = "0.10.6" }
 rand = { version = "0.8.5" }
