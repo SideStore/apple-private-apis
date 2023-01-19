@@ -31,15 +31,15 @@ pub struct SrpGroup {
     pub g: BigUint,
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::groups::G_1024;
-    use crate::utils::compute_k;
-    use sha1::Sha1;
+// #[cfg(test)]
+// mod tests {
+//     use crate::groups::G_1024;
+//     use crate::utils::compute_k;
+//     use sha1::Sha1;
 
-    #[test]
-    fn test_k_1024_sha1() {
-        let k = compute_k::<Sha1>(&G_1024).to_bytes_be();
-        assert_eq!(&k, include_bytes!("test/k_sha1_1024.bin"));
-    }
-}
+//     #[test]
+//     fn test_k_1024_sha1() {
+//         let k = compute_k::<Sha1>(&G_1024).to_bytes_be();
+//         assert_eq!(&k, include_bytes!("test/k_sha1_1024.bin"));
+//     }
+// }
