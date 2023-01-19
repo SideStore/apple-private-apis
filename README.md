@@ -1,7 +1,7 @@
 <!-- github markdown -->
 # `apple-private-apis`
 
-A set of Rust libraries to interact with apple's private APIs and servers, made for use in [SideStore](https://sidestore.io).
+A set of Rust libraries to interact with apple's private APIs and servers, made for use in [**SideInstaller**](https://sidestore.io).
 
 <!-- table -->
 | Library | Description |
