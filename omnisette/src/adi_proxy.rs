@@ -45,7 +45,8 @@ pub struct SynchronizeData {
 }
 
 pub struct StartProvisioningData {
-    pub cpim: Vec<u8>
+    pub cpim: Vec<u8>,
+    pub session: u32
 }
 
 pub struct RequestOTPData {
@@ -140,8 +141,29 @@ impl dyn ADIProxy {
            .to_owned();
 
         let spim = base64_engine.decode(spim)?;
-        self.start_provisioning(DS_ID, spim.as_slice())?;
-        // client.post()
+        let first_step = self.start_provisioning(DS_ID, spim.as_slice())?;
+
+        let mut body = plist::Dictionary::new();
+        let mut request = plist::Dictionary::new();
+        request.insert("cpim".to_owned(), plist::Value::String(base64_engine.encode(first_step.cpim)));
+        body.insert("Header".to_owned(), plist::Value::Dictionary(plist::Dictionary::new()));
+        body.insert("Request".to_owned(), plist::Value::Dictionary(request));
+
+        let mut fp_request = Vec::new();
+        plist::Value::Dictionary(body).to_writer_xml(&mut fp_request)?;
+
+        let response = client
+            .post(finish_provisioning_url)
+            .body(fp_request)
+            .send()?
+            .plist()?;
+
+        let response = response.get("Response").unwrap().as_dictionary().unwrap();
+
+        let ptm = base64_engine.decode(response.get("ptm").unwrap().as_string().unwrap().to_owned())?;
+        let tk = base64_engine.decode(response.get("tk").unwrap().as_string().unwrap().to_owned())?;
+
+        self.end_provisioning(first_step.session, ptm.as_slice(), tk.as_slice())?;
 
         Ok(())
     }

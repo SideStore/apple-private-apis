@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use android_loader::android_library::AndroidLibrary;
 use anyhow::Result;
 use crate::adi_proxy::{ADIError, ADIProxy, ConfigurableADIProxy, RequestOTPData, StartProvisioningData, SynchronizeData};
-use std::ffi::CString;
+use std::ffi::{c_char, CString};
 use android_loader::android_loader::AndroidLoader;
 use android_loader::hook_manager;
 
@@ -180,7 +180,8 @@ impl ADIProxy for StoreServicesCoreADIProxy {
                     (self.adi_dispose)(cpim_ptr);
 
                     Ok(StartProvisioningData {
-                        cpim
+                        cpim,
+                        session
                     })
                 },
                 err => Err(ADIError::resolve(err))
@@ -270,8 +271,9 @@ extern "C" fn arc4random() -> u32 {
     rand::thread_rng().gen()
 }
 
-extern "C" fn __system_property_get() {
-    println!("undefined symbol but ignoring");
+unsafe extern "C" fn __system_property_get(name: *const c_char, value: *mut c_char) -> i32 {
+    *value = '0' as c_char;
+    return 1;
 }
 
 #[cfg(target_family = "unix")]
