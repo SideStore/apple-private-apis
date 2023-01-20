@@ -15,7 +15,7 @@ impl RemoteAnisetteProvider {
 }
 
 impl AnisetteHeadersProvider for RemoteAnisetteProvider {
-    fn get_anisette_headers(&self) -> Result<HashMap<String, String>> {
+    fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
         Ok(reqwest::blocking::get(&self.url)?.json()?)
     }
 }
@@ -25,13 +25,13 @@ mod tests {
     use anyhow::Result;
     use crate::adi_proxy::ADIProxyAnisetteProvider;
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
-    use crate::FALLBACK_ANISETTE_URL;
+    use crate::DEFAULT_ANISETTE_URL;
     use crate::remote_anisette::RemoteAnisetteProvider;
 
     #[test]
     fn fetch_anisette_remote() -> Result<()> {
-        let provider = RemoteAnisetteProvider::new(FALLBACK_ANISETTE_URL);
-        println!("Remote headers: {:?}", (&provider as &dyn AnisetteHeadersProvider).get_authentication_headers()?);
+        let mut provider = RemoteAnisetteProvider::new(DEFAULT_ANISETTE_URL);
+        println!("Remote headers: {:?}", (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?);
         Ok(())
     }
 }

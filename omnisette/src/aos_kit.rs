@@ -22,7 +22,7 @@ impl AnisetteHeadersProvider for AOSKitAnisetteProvider {
         })
     }
 
-    fn get_anisette_headers(&self) -> Result<HashMap<String, String>> {
+    fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
         let headers_map = HashMap::new();
 
         let headers: *const NSObject =
@@ -70,8 +70,8 @@ mod tests {
 
     #[test]
     fn fetch_anisette_aoskit() -> Result<()> {
-        let provider = AOSKitAnisetteProvider::new()?;
-        println!("AOSKit headers: {:?}", (&provider as &dyn AnisetteHeadersProvider).get_authentication_headers()?);
+        let mut provider = AOSKitAnisetteProvider::new()?;
+        println!("AOSKit headers: {:?}", (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?);
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use anyhow::{bail, Result};
+use anyhow::Result;
 use std::fmt::Formatter;
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 use crate::adi_proxy::{ADIProxyAnisetteProvider};
@@ -28,11 +28,11 @@ impl std::fmt::Display for AnisetteMetaError {
     }
 }
 
-pub const FALLBACK_ANISETTE_URL: &str = "https://ani.f1sh.me/";
+pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
 impl AnisetteHeaders {
     pub fn get_anisette_headers_provider() -> Result<Box<dyn AnisetteHeadersProvider>> {
-        Self::get_anisette_headers_provider_with_fallback_url(FALLBACK_ANISETTE_URL)
+        Self::get_anisette_headers_provider_with_fallback_url(DEFAULT_ANISETTE_URL)
     }
 
     pub fn get_anisette_headers_provider_with_fallback_url(fallback_url: &str) -> Result<Box<dyn AnisetteHeadersProvider>> {
@@ -46,7 +46,7 @@ impl AnisetteHeaders {
         {
             match store_services_core::StoreServicesCoreADIProxy::new("adi_data/") {
                 Ok(ssc_adi_proxy) =>
-                    return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy))),
+                    return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy)?)),
                 Err(_) => {}
             }
         }
@@ -62,11 +62,13 @@ impl AnisetteHeaders {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
+    use std::any::type_name;
     use crate::AnisetteHeaders;
 
     #[test]
     fn fetch_anisette_auto() -> Result<()> {
-        AnisetteHeaders::get_anisette_headers_provider()?.get_anisette_headers()?;
+        let mut provider = AnisetteHeaders::get_anisette_headers_provider()?;
+        println!("Headers: {:?}", provider.get_authentication_headers()?);
         Ok(())
     }
 }
