@@ -3,6 +3,13 @@ name = "omnisette"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
+anyhow = "1.0"
+
+[target.'cfg(not(target_env = "macos"))'.dependencies]
+android-loader = { git = "https://github.com/Dadoum/android-loader" }
+
+[target.'cfg(target_env = "macos")'.dependencies]
+dlopen2 = "0.4.1"
+objc = "0.2.7"
+objc-foundation = "0.1.1"
