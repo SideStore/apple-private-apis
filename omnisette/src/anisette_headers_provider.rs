@@ -1,12 +1,19 @@
+use anyhow::{Result};
 use std::collections::HashMap;
 
 pub trait AnisetteHeadersProvider {
-    fn get_anisette_headers(&self) -> HashMap<String, String>;
+    fn get_anisette_headers(&self) -> Result<HashMap<String, String>>;
 }
 
 impl dyn AnisetteHeadersProvider {
     // Normalizes headers to ensure that all the required headers are given.
-    fn get_authentication_headers(&self) -> HashMap<String, String> {
-        self.get_anisette_headers()
+    pub fn get_authentication_headers(&self) -> Result<HashMap<String, String>> {
+        let mut headers = self.get_anisette_headers()?;
+
+        if let Some(client_info) = headers.remove("X-MMe-Client-Info") {
+            headers.insert("X-Mme-Client-Info".to_string(), client_info);
+        }
+
+        Ok(headers)
     }
 }

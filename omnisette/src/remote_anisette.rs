@@ -1,3 +1,4 @@
+use anyhow::Result;
 use std::collections::HashMap;
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 
@@ -14,8 +15,8 @@ impl RemoteAnisetteProvider {
 }
 
 impl AnisetteHeadersProvider for RemoteAnisetteProvider {
-    fn get_anisette_headers(&self) -> HashMap<String, String> {
-        todo!()
+    fn get_anisette_headers(&self) -> Result<HashMap<String, String>> {
+        Ok(reqwest::blocking::get(&self.url)?.json()?)
     }
 }
 
@@ -29,7 +30,8 @@ mod tests {
 
     #[test]
     fn fetch_anisette_remote() -> Result<()> {
-        RemoteAnisetteProvider::new(FALLBACK_ANISETTE_URL).get_anisette_headers();
+        let provider = RemoteAnisetteProvider::new(FALLBACK_ANISETTE_URL);
+        println!("Remote headers: {:?}", (&provider as &dyn AnisetteHeadersProvider).get_authentication_headers()?);
         Ok(())
     }
 }

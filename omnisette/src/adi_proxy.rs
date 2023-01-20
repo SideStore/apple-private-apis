@@ -66,7 +66,7 @@ impl<ProxyType: ADIProxy> ADIProxyAnisetteProvider<ProxyType> {
 }
 
 impl<ProxyType: ADIProxy> AnisetteHeadersProvider for ADIProxyAnisetteProvider<ProxyType> {
-    fn get_anisette_headers(&self) -> HashMap<String, String> {
+    fn get_anisette_headers(&self) -> Result<HashMap<String, String>> {
         todo!()
     }
 }

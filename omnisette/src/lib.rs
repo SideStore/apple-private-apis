@@ -1,8 +1,7 @@
+use anyhow::{bail, Result};
 use std::fmt::Formatter;
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 use crate::adi_proxy::{ADIProxyAnisetteProvider};
-use anyhow::{Result, bail};
-use crate::remote_anisette::RemoteAnisetteProvider;
 
 mod anisette_headers_provider;
 mod adi_proxy;
@@ -13,6 +12,7 @@ mod store_services_core;
 #[cfg(target_env = "macos")]
 mod aos_kit;
 
+#[cfg(feature = "remote-anisette")]
 mod remote_anisette;
 
 struct AnisetteHeaders;
@@ -31,14 +31,14 @@ impl std::fmt::Display for AnisetteMetaError {
 pub const FALLBACK_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
 impl AnisetteHeaders {
-    pub fn get_anisette_headers_provider() -> Box<dyn AnisetteHeadersProvider> {
+    pub fn get_anisette_headers_provider() -> Result<Box<dyn AnisetteHeadersProvider>> {
         Self::get_anisette_headers_provider_with_fallback_url(FALLBACK_ANISETTE_URL)
     }
 
-    pub fn get_anisette_headers_provider_with_fallback_url(fallback_url: &str) -> Box<dyn AnisetteHeadersProvider> {
+    pub fn get_anisette_headers_provider_with_fallback_url(fallback_url: &str) -> Result<Box<dyn AnisetteHeadersProvider>> {
         #[cfg(target_env = "macos")]
         match aos_kit::AOSKitAnisetteProvider::new() {
-            Ok(prov) => return Box::new(prov),
+            Ok(prov) => return Ok(Box::new(prov)),
             Err(_) => {}
         }
 
@@ -46,12 +46,16 @@ impl AnisetteHeaders {
         {
             match store_services_core::StoreServicesCoreADIProxy::new("adi_data/") {
                 Ok(ssc_adi_proxy) =>
-                    return Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy)),
+                    return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy))),
                 Err(_) => {}
             }
         }
 
-        Box::new(RemoteAnisetteProvider::new(fallback_url))
+        #[cfg(feature = "remote-anisette")]
+        return Ok(Box::new(remote_anisette::RemoteAnisetteProvider::new(fallback_url)));
+
+        #[cfg(not(feature = "remote-anisette"))]
+        bail!(AnisetteMetaError::UnsupportedDevice)
     }
 }
 
@@ -62,7 +66,7 @@ mod tests {
 
     #[test]
     fn fetch_anisette_auto() -> Result<()> {
-        AnisetteHeaders::get_anisette_headers_provider().get_anisette_headers();
+        AnisetteHeaders::get_anisette_headers_provider()?.get_anisette_headers()?;
         Ok(())
     }
 }

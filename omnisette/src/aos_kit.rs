@@ -22,7 +22,7 @@ impl AnisetteHeadersProvider for AOSKitAnisetteProvider {
         })
     }
 
-    fn get_anisette_headers(&self) -> HashMap<String, String> {
+    fn get_anisette_headers(&self) -> Result<HashMap<String, String>> {
         let headers_map = HashMap::new();
 
         let headers: *const NSObject =
@@ -30,34 +30,34 @@ impl AnisetteHeadersProvider for AOSKitAnisetteProvider {
 
         let otp: *const NSString =
             unsafe { msg_send![headers, valueForKey: NSString::from_str("X-Apple-MD")] };
-        headers_map["X-Apple-I-MD"] = unsafe { (*otp).as_str() };
+        headers_map.insert("X-Apple-I-MD".to_string(), otp.as_str());;
 
         let mid: *const NSString =
             unsafe { msg_send![headers, valueForKey: NSString::from_str("X-Apple-MD-M")] };
-        headers_map["X-Apple-I-MD-M"] = unsafe { (*mid).as_str() };
+        headers_map.insert("X-Apple-I-MD-M".to_string(), mid.as_str());;
 
         let machine_serial_number: *const NSString =
             unsafe { msg_send![aos_utilities, machineSerialNumber] };
-        headers_map["X-Apple-SRL-NO"] = unsafe { (*machine_serial_number).as_str() };
+        headers_map.insert("X-Apple-SRL-NO".to_string(), machine_serial_number.as_str());;
 
         let current_device: *const NSObject = unsafe { msg_send![self.ak_device, currentDevice] };
 
         let local_user_uuid: *const NSString = unsafe { msg_send![current_device, localUserUUID] };
-        headers_map["X-Apple-I-MD-LU"] = unsafe { (*local_user_uuid).as_str() };
+        headers_map.insert("X-Apple-I-MD-LU".to_string(), local_user_uuid.as_str());;
 
         let locale: *const NSObject = unsafe { msg_send![current_device, locale] };
         let locale: *const NSString = unsafe { msg_send![locale, localeIdentifier] };
-        headers_map["X-Apple-Locale"] = unsafe { (*locale).as_str() }; // FIXME maybe not the right header name
+        headers_map.insert("X-Apple-Locale".to_string(), locale.as_str());; // FIXME maybe not the right header name
 
         let server_friendly_description: *const NSString =
             unsafe { msg_send![current_device, serverFriendlyDescription] };
-        headers_map["X-Mme-Client-Info"] = unsafe { (*server_friendly_description).as_str() };
+        headers_map.insert("X-Mme-Client-Info".to_string(), server_friendly_description.as_str());;
 
         let unique_device_identifier: *const NSString =
             unsafe { msg_send![current_device, uniqueDeviceIdentifier] };
-        headers_map["X-Mme-Device-Id"] = unsafe { (*unique_device_identifier).as_str() };
+        headers_map.insert("X-Mme-Device-Id".to_string(), unique_device_identifier.as_str());;
 
-        headers_map
+        Ok(headers_map)
     }
 }
 
@@ -70,7 +70,8 @@ mod tests {
 
     #[test]
     fn fetch_anisette_aoskit() -> Result<()> {
-        AOSKitAnisetteProvider::new()?.get_anisette_headers();
+        let provider = AOSKitAnisetteProvider::new()?;
+        println!("AOSKit headers: {:?}", (&provider as &dyn AnisetteHeadersProvider).get_authentication_headers()?);
         Ok(())
     }
 }
