@@ -53,7 +53,19 @@ impl dyn ADIProxy {
     }
 }
 
-impl AnisetteHeadersProvider for dyn ADIProxy {
+pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy> {
+    adi_proxy: ProxyType
+}
+
+impl<ProxyType: ADIProxy> ADIProxyAnisetteProvider<ProxyType> {
+    pub fn new(adi_proxy: ProxyType) -> ADIProxyAnisetteProvider<ProxyType> {
+        ADIProxyAnisetteProvider {
+            adi_proxy
+        }
+    }
+}
+
+impl<ProxyType: ADIProxy> AnisetteHeadersProvider for ADIProxyAnisetteProvider<ProxyType> {
     fn get_anisette_headers(&self) -> HashMap<String, String> {
         todo!()
     }

@@ -5,16 +5,16 @@ use dlopen2::symbor::Library;
 use objc::{msg_send, runtime::Class, sel, sel_impl};
 use objc_foundation::{INSString, NSObject, NSString};
 
-struct AOSKitHeadersProvider {
+struct AOSKitAnisetteProvider {
     aos_kit: Library,
     auth_kit: Library,
     aos_utilities: Class,
     ak_device: Class
 }
 
-impl AnisetteHeadersProvider for AOSKitHeadersProvider {
-    fn new() -> Result<AOSKitHeadersProvider> {
-        Ok(AOSKitHeadersProvider {
+impl AnisetteHeadersProvider for AOSKitAnisetteProvider {
+    fn new() -> Result<AOSKitAnisetteProvider> {
+        Ok(AOSKitAnisetteProvider {
             aos_kit: Library::open("/System/Library/PrivateFrameworks/AOSKit.framework/AOSKit")?,
             auth_kit: Library::open("/System/Library/PrivateFrameworks/AuthKit.framework/AuthKit")?,
             aos_utilities: Class::get("AOSUtilities")?,
@@ -58,5 +58,19 @@ impl AnisetteHeadersProvider for AOSKitHeadersProvider {
         headers_map["X-Mme-Device-Id"] = unsafe { (*unique_device_identifier).as_str() };
 
         headers_map
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use crate::adi_proxy::ADIProxyAnisetteProvider;
+    use crate::anisette_headers_provider::AnisetteHeadersProvider;
+    use crate::aos_kit::AOSKitAnisetteProvider;
+
+    #[test]
+    fn fetch_anisette_aoskit() -> Result<()> {
+        AOSKitAnisetteProvider::new()?.get_anisette_headers();
+        Ok(())
     }
 }
