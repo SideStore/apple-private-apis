@@ -34,8 +34,8 @@ pub struct AnisetteData {
 impl AnisetteData {
     /// Fetches the data at an anisette server
     pub fn from_url(url: impl Into<String>) -> Result<Self, crate::Error> {
-        let body = match ureq::get(&url.into()).call() {
-            Ok(b) => match b.into_string() {
+        let body = match reqwest::blocking::get(&url.into()) {
+            Ok(b) => match b.text() {
                 Ok(b) => b,
                 Err(_) => {
                     return Err(Error::HttpRequest);
