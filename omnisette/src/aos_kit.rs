@@ -1,77 +1,118 @@
-use anyhow::{Result, Ok};
-use std::collections::HashMap;
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
+use anyhow::Result;
+
 use dlopen2::symbor::Library;
 use objc::{msg_send, runtime::Class, sel, sel_impl};
 use objc_foundation::{INSString, NSObject, NSString};
-
-struct AOSKitAnisetteProvider {
+use std::collections::HashMap;
+use std::error::Error;
+use std::fmt::{Display, Formatter};
+pub struct AOSKitAnisetteProvider<'lt> {
     aos_kit: Library,
     auth_kit: Library,
-    aos_utilities: Class,
-    ak_device: Class
+    aos_utilities: &'lt Class,
+    ak_device: &'lt Class,
 }
 
-impl AnisetteHeadersProvider for AOSKitAnisetteProvider {
-    fn new() -> Result<AOSKitAnisetteProvider> {
+impl<'lt> AOSKitAnisetteProvider<'lt> {
+    pub fn new() -> Result<AOSKitAnisetteProvider<'lt>> {
         Ok(AOSKitAnisetteProvider {
             aos_kit: Library::open("/System/Library/PrivateFrameworks/AOSKit.framework/AOSKit")?,
             auth_kit: Library::open("/System/Library/PrivateFrameworks/AuthKit.framework/AuthKit")?,
-            aos_utilities: Class::get("AOSUtilities")?,
-            ak_device: Class::get("AKDevice")?
+            aos_utilities: Class::get("AOSUtilities").ok_or(AOSKitError::ClassLoadFailed)?,
+            ak_device: Class::get("AKDevice").ok_or(AOSKitError::ClassLoadFailed)?,
         })
     }
+}
 
+impl<'lt> AnisetteHeadersProvider for AOSKitAnisetteProvider<'lt> {
     fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
-        let headers_map = HashMap::new();
+        let mut headers_map = HashMap::new();
 
-        let headers: *const NSObject =
-            unsafe { msg_send![self.aos_utilities, retrieveOTPHeadersForDSID: NSString::from_str("-2")] };
+        let headers: *const NSObject = unsafe {
+            msg_send![self.aos_utilities, retrieveOTPHeadersForDSID: NSString::from_str("-2")]
+        };
 
         let otp: *const NSString =
             unsafe { msg_send![headers, valueForKey: NSString::from_str("X-Apple-MD")] };
-        headers_map.insert("X-Apple-I-MD".to_string(), otp.as_str());;
+        headers_map.insert(
+            "X-Apple-I-MD".to_string(),
+            unsafe { (*otp).as_str() }.to_string(),
+        );
 
         let mid: *const NSString =
             unsafe { msg_send![headers, valueForKey: NSString::from_str("X-Apple-MD-M")] };
-        headers_map.insert("X-Apple-I-MD-M".to_string(), mid.as_str());;
+        headers_map.insert(
+            "X-Apple-I-MD-M".to_string(),
+            unsafe { (*mid).as_str() }.to_string(),
+        );
 
         let machine_serial_number: *const NSString =
-            unsafe { msg_send![aos_utilities, machineSerialNumber] };
-        headers_map.insert("X-Apple-SRL-NO".to_string(), machine_serial_number.as_str());;
+            unsafe { msg_send![self.aos_utilities, machineSerialNumber] };
+        headers_map.insert(
+            "X-Apple-SRL-NO".to_string(),
+            unsafe { (*machine_serial_number).as_str() }.to_string(),
+        );
 
         let current_device: *const NSObject = unsafe { msg_send![self.ak_device, currentDevice] };
 
         let local_user_uuid: *const NSString = unsafe { msg_send![current_device, localUserUUID] };
-        headers_map.insert("X-Apple-I-MD-LU".to_string(), local_user_uuid.as_str());;
+        headers_map.insert(
+            "X-Apple-I-MD-LU".to_string(),
+            unsafe { (*local_user_uuid).as_str() }.to_string(),
+        );
 
         let locale: *const NSObject = unsafe { msg_send![current_device, locale] };
         let locale: *const NSString = unsafe { msg_send![locale, localeIdentifier] };
-        headers_map.insert("X-Apple-Locale".to_string(), locale.as_str());; // FIXME maybe not the right header name
+        headers_map.insert(
+            "X-Apple-Locale".to_string(),
+            unsafe { (*locale).as_str() }.to_string(),
+        ); // FIXME maybe not the right header name
 
         let server_friendly_description: *const NSString =
             unsafe { msg_send![current_device, serverFriendlyDescription] };
-        headers_map.insert("X-Mme-Client-Info".to_string(), server_friendly_description.as_str());;
+        headers_map.insert(
+            "X-Mme-Client-Info".to_string(),
+            unsafe { (*server_friendly_description).as_str() }.to_string(),
+        );
 
         let unique_device_identifier: *const NSString =
             unsafe { msg_send![current_device, uniqueDeviceIdentifier] };
-        headers_map.insert("X-Mme-Device-Id".to_string(), unique_device_identifier.as_str());;
+        headers_map.insert(
+            "X-Mme-Device-Id".to_string(),
+            unsafe { (*unique_device_identifier).as_str() }.to_string(),
+        );
 
         Ok(headers_map)
     }
 }
 
+#[derive(Debug)]
+enum AOSKitError {
+    ClassLoadFailed,
+}
+
+impl Display for AOSKitError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Error for AOSKitError {}
+
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
-    use crate::adi_proxy::ADIProxyAnisetteProvider;
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
     use crate::aos_kit::AOSKitAnisetteProvider;
+    use anyhow::Result;
 
     #[test]
     fn fetch_anisette_aoskit() -> Result<()> {
         let mut provider = AOSKitAnisetteProvider::new()?;
-        println!("AOSKit headers: {:?}", (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?);
+        println!(
+            "AOSKit headers: {:?}",
+            (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?
+        );
         Ok(())
     }
 }
