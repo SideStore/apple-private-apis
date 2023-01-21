@@ -3,6 +3,7 @@ use android_loader::android_library::AndroidLibrary;
 use anyhow::Result;
 use crate::adi_proxy::{ADIError, ADIProxy, ConfigurableADIProxy, RequestOTPData, StartProvisioningData, SynchronizeData};
 use std::ffi::{c_char, CString};
+use std::path::{Path, PathBuf};
 use android_loader::android_loader::AndroidLoader;
 use android_loader::hook_manager;
 
@@ -54,18 +55,38 @@ pub struct StoreServicesCoreADIProxy {
 }
 
 impl StoreServicesCoreADIProxy {
-    // TODO use library_path
-    pub fn new(library_path: &str) -> Result<StoreServicesCoreADIProxy> {
+    pub fn new(library_path: &PathBuf) -> Result<StoreServicesCoreADIProxy> {
         // Should be safe is the library is correct.
         unsafe {
             LoaderHelpers::setup_hooks();
 
-            let store_services_core = AndroidLoader::load_library("lib/x86_64/libstoreservicescore.so")?;
+            if !library_path.exists() {
+                std::fs::create_dir(library_path)?;
+                return Err(ADIStoreSericesCoreErr::MissingLibraries.into());
+            }
+
+            let library_path = library_path
+                .canonicalize()?;
+
+            #[cfg(target_arch = "x86_64")]
+            const ARCH: &str = "x86_64";
+            #[cfg(target_arch = "x86")]
+            const ARCH: &str = "x86";
+            #[cfg(target_arch = "arm")]
+            const ARCH: &str = "armeabi-v7a";
+            #[cfg(target_arch = "aarch64")]
+            const ARCH: &str = "arm64-v8a";
+
+            let native_library_path = library_path
+                .join("lib")
+                .join(ARCH);
+
+            let store_services_core = AndroidLoader::load_library(native_library_path.join("libstoreservicescore.so").to_str().ok_or(ADIStoreSericesCoreErr::Misc)?)?;
 
             let adi_load_library_with_path: extern "C" fn(path: *const u8) -> i32
                 = std::mem::transmute(store_services_core.get_symbol("kq56gsgHG6").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?);
 
-            let path = CString::new("lib/x86_64/").unwrap();
+            let path = CString::new(native_library_path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?).unwrap();
             (adi_load_library_with_path)(path.as_ptr() as *const u8);
 
             let adi_set_android_id = store_services_core.get_symbol("Sph98paBcz").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
@@ -80,7 +101,7 @@ impl StoreServicesCoreADIProxy {
             let adi_dispose = store_services_core.get_symbol("jk24uiwqrg").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
             let adi_otp_request = store_services_core.get_symbol("qi864985u0").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
 
-            Ok(StoreServicesCoreADIProxy {
+            let mut proxy = StoreServicesCoreADIProxy {
                 store_services_core,
 
                 local_user_uuid: String::new(),
@@ -97,7 +118,11 @@ impl StoreServicesCoreADIProxy {
                 adi_get_login_code: std::mem::transmute(adi_get_login_code),
                 adi_dispose: std::mem::transmute(adi_dispose),
                 adi_otp_request: std::mem::transmute(adi_otp_request),
-            })
+            };
+
+            proxy.set_provisioning_path(library_path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?)?;
+
+            Ok(proxy)
         }
     }
 }
@@ -328,7 +353,9 @@ impl LoaderHelpers {
 
 #[derive(Debug)]
 enum ADIStoreSericesCoreErr {
-    InvalidLibraryFormat
+    InvalidLibraryFormat,
+    Misc,
+    MissingLibraries
 }
 
 impl std::fmt::Display for ADIStoreSericesCoreErr {
@@ -341,6 +368,7 @@ impl std::error::Error for ADIStoreSericesCoreErr {}
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
     use anyhow::Result;
     use crate::adi_proxy::ADIProxyAnisetteProvider;
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
@@ -348,7 +376,7 @@ mod tests {
 
     #[test]
     fn fetch_anisette_ssc() -> Result<()> {
-        let mut provider = ADIProxyAnisetteProvider::new(StoreServicesCoreADIProxy::new("lib/")?)?;
+        let mut provider = ADIProxyAnisetteProvider::new(StoreServicesCoreADIProxy::new(&PathBuf::new().join("anisette_test"))?)?;
         println!("SSC headers: {:?}", (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?);
         Ok(())
     }

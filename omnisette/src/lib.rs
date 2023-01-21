@@ -1,7 +1,8 @@
 use anyhow::Result;
 use std::fmt::Formatter;
+use std::path::{Path, PathBuf};
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
-use crate::adi_proxy::{ADIProxyAnisetteProvider};
+use crate::adi_proxy::{ADIProxyAnisetteProvider, ConfigurableADIProxy};
 
 mod anisette_headers_provider;
 mod adi_proxy;
@@ -30,12 +31,40 @@ impl std::fmt::Display for AnisetteMetaError {
 
 pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
-impl AnisetteHeaders {
-    pub fn get_anisette_headers_provider() -> Result<Box<dyn AnisetteHeadersProvider>> {
-        Self::get_anisette_headers_provider_with_fallback_url(DEFAULT_ANISETTE_URL)
+struct AnisetteConfiguration {
+    anisette_url: String,
+    configuration_path: PathBuf
+}
+
+impl AnisetteConfiguration {
+    pub fn new() -> AnisetteConfiguration {
+        AnisetteConfiguration {
+            anisette_url: DEFAULT_ANISETTE_URL.to_string(),
+            configuration_path: PathBuf::new()
+        }
     }
 
-    pub fn get_anisette_headers_provider_with_fallback_url(fallback_url: &str) -> Result<Box<dyn AnisetteHeadersProvider>> {
+    pub fn anisette_url(&self) -> &String {
+        &self.anisette_url
+    }
+
+    pub fn configuration_path(&self) -> &PathBuf {
+        &self.configuration_path
+    }
+
+    pub fn set_anisette_url(mut self, anisette_url: String) -> AnisetteConfiguration {
+        self.anisette_url = anisette_url;
+        self
+    }
+
+    pub fn set_configuration_path(mut self, configuration_path: PathBuf) -> AnisetteConfiguration {
+        self.configuration_path = configuration_path;
+        self
+    }
+}
+
+impl AnisetteHeaders {
+    pub fn get_anisette_headers_provider(configuration: AnisetteConfiguration) -> Result<Box<dyn AnisetteHeadersProvider>> {
         #[cfg(target_env = "macos")]
         match aos_kit::AOSKitAnisetteProvider::new() {
             Ok(prov) => return Ok(Box::new(prov)),
@@ -44,15 +73,17 @@ impl AnisetteHeaders {
 
         #[cfg(not(target_env = "macos"))]
         {
-            match store_services_core::StoreServicesCoreADIProxy::new("adi_data/") {
-                Ok(ssc_adi_proxy) =>
-                    return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy)?)),
+            match store_services_core::StoreServicesCoreADIProxy::new(configuration.configuration_path()) {
+                Ok(mut ssc_adi_proxy) => {
+                    let _ = ssc_adi_proxy.set_provisioning_path(configuration.configuration_path().to_str().unwrap());
+                    return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy)?));
+                }
                 Err(_) => {}
             }
         }
 
         #[cfg(feature = "remote-anisette")]
-        return Ok(Box::new(remote_anisette::RemoteAnisetteProvider::new(fallback_url)));
+        return Ok(Box::new(remote_anisette::RemoteAnisetteProvider::new(configuration.anisette_url)));
 
         #[cfg(not(feature = "remote-anisette"))]
         bail!(AnisetteMetaError::UnsupportedDevice)
@@ -63,11 +94,14 @@ impl AnisetteHeaders {
 mod tests {
     use anyhow::Result;
     use std::any::type_name;
-    use crate::AnisetteHeaders;
+    use std::path::PathBuf;
+    use crate::{AnisetteConfiguration, AnisetteHeaders};
 
     #[test]
     fn fetch_anisette_auto() -> Result<()> {
-        let mut provider = AnisetteHeaders::get_anisette_headers_provider()?;
+        let mut provider = AnisetteHeaders::get_anisette_headers_provider(AnisetteConfiguration::new()
+            .set_configuration_path(PathBuf::new().join("anisette_test"))
+        )?;
         println!("Headers: {:?}", provider.get_authentication_headers()?);
         Ok(())
     }

@@ -178,14 +178,11 @@ const ADI_KEY: &str = "The most secure key is this one. Not only because it is o
 
 impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
     pub fn new(mut adi_proxy: ProxyType) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
-        let mut device_identifier_builder = IdBuilder::new(Encryption::SHA1);
-        let mut local_uuid_builder = IdBuilder::new(Encryption::SHA256);
-
-        adi_proxy.set_device_identifier(device_identifier_builder
+        adi_proxy.set_device_identifier(IdBuilder::new(Encryption::SHA1)
             .add_component(HWIDComponent::MachineName)
             .add_component(HWIDComponent::MacAddress)
             .add_component(HWIDComponent::SystemID).build(ADI_KEY)?);
-        adi_proxy.set_device_identifier(local_uuid_builder
+        adi_proxy.set_local_user_uuid(IdBuilder::new(Encryption::SHA256)
             .add_component(HWIDComponent::MachineName)
             .add_component(HWIDComponent::MacAddress)
             .add_component(HWIDComponent::SystemID).build(ADI_KEY)?);

@@ -7,9 +7,9 @@ pub struct RemoteAnisetteProvider {
 }
 
 impl RemoteAnisetteProvider {
-    pub fn new(url: &str) -> RemoteAnisetteProvider {
+    pub fn new(url: String) -> RemoteAnisetteProvider {
         RemoteAnisetteProvider {
-            url: url.to_string()
+            url
         }
     }
 }
@@ -30,7 +30,7 @@ mod tests {
 
     #[test]
     fn fetch_anisette_remote() -> Result<()> {
-        let mut provider = RemoteAnisetteProvider::new(DEFAULT_ANISETTE_URL);
+        let mut provider = RemoteAnisetteProvider::new(DEFAULT_ANISETTE_URL.to_string());
         println!("Remote headers: {:?}", (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?);
         Ok(())
     }
