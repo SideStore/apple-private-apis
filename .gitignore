@@ -3,3 +3,8 @@
 */Cargo.lock
 Cargo.lock
 ignore_this_test.js
+
+# IDE generated files
+.idea
+
+/omnisette/anisette_test/
