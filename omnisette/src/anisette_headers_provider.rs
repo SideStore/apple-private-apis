@@ -1,4 +1,4 @@
-use anyhow::{Result};
+use anyhow::Result;
 use std::collections::HashMap;
 
 pub trait AnisetteHeadersProvider {

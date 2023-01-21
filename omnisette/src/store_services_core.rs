@@ -218,6 +218,8 @@ impl ADIProxy for StoreServicesCoreADIProxy {
     }
 
     fn is_machine_provisioned(&self, ds_id: i64) -> bool {
+        println!("is machine provisioned code: {}", (self.adi_get_login_code)(ds_id));
+
         (self.adi_get_login_code)(ds_id) == 0
     }
 
@@ -253,8 +255,10 @@ impl ADIProxy for StoreServicesCoreADIProxy {
         self.local_user_uuid = local_user_uuid;
     }
 
-    fn set_device_identifier(&mut self, device_identifier: String) {
+    fn set_device_identifier(&mut self, device_identifier: String) -> Result<()> {
+        self.set_identifier(&device_identifier[0..16])?;
         self.device_identifier = device_identifier;
+        Ok(())
     }
 
     fn get_local_user_uuid(&self) -> String {

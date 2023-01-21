@@ -9,13 +9,13 @@ default = ["remote-anisette"]
 
 [dependencies]
 anyhow = "1.0"
+base64 = "0.21.0"
+machineid-rs = "1.2.2"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 
-[target.'cfg(not(target_env = "macos"))'.dependencies]
+[target.'cfg(not(target_os = "macos"))'.dependencies]
 android-loader = { git = "https://github.com/Dadoum/android-loader" }
-base64 = "0.21.0"
 libc = "0.2.139"
-machineid-rs = "1.2.2"
 plist = "1.4.0"
 rand = "0.8.4"
 
@@ -27,7 +27,7 @@ features = [
     "Win32_System_SystemInformation"
 ]
 
-[target.'cfg(target_env = "macos")'.dependencies]
+[target.'cfg(target_os = "macos")'.dependencies]
 dlopen2 = "0.4.1"
 objc = "0.2.7"
 objc-foundation = "0.1.1"
