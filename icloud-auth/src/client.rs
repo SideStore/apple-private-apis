@@ -1,20 +1,21 @@
+use std::str::FromStr;
+
 use crate::anisette::AnisetteData;
 use crate::Error;
 use aes::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use hmac::{Hmac, Mac};
-use rustls::{ClientConfig, RootCertStore};
+use reqwest::{
+    blocking::{Client, ClientBuilder, Response},
+    header::{HeaderMap, HeaderName, HeaderValue},
+    Certificate,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use srp::{
     client::{SrpClient, SrpClientVerifier},
     groups::G_2048,
 };
-use std::sync::Arc;
-use ureq::AgentBuilder;
-
-type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
-type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
 const GSA_ENDPOINT: &str = "https://gsa.apple.com/grandslam/GsService2";
 const APPLE_ROOT: &[u8] = include_bytes!("./apple_root.der");
@@ -68,59 +69,44 @@ pub struct ChallengeRequest {
 pub struct AppleAccount {
     //TODO: move this to omnisette
     pub anisette: AnisetteData,
+    // pub spd:  Option<plist::Dictionary>,
+    //mutable spd
     pub spd: Option<plist::Dictionary>,
+    client: Client,
 }
 //Just make it return a custom enum, with LoggedIn(account: AppleAccount) or Needs2FA(FinishLoginDel: fn(i32) -> TFAResponse)
 pub enum LoginResponse {
     LoggedIn(AppleAccount),
     // NeedsSMS2FASent(Send2FAToDevices),
-    NeedsDevice2FA(Send2FAToDevices),
-    Needs2FAVerification(Verify2FA),
+    NeedsDevice2FA(),
+    Needs2FAVerification(),
+    NeedsLogin(),
     Failed(Error),
 }
 
-//Send2FAToDevices and Verify2FA are just functions that take the same arguments as the original functions, but return a LoginResponse
-//This way, you can just call the function and get a LoginResponse, and you don't have to worry about the state of the AppleAccount
-//You can also just make them methods on AppleAccount, but I think this is cleaner
-pub struct Send2FAToDevices {
-    pub account: AppleAccount,
-    pub spd: plist::Dictionary,
-}
-pub struct Verify2FA {
-    pub account: AppleAccount,
-    pub spd: plist::Dictionary,
-}
+// impl Send2FAToDevices {
+//     pub fn send_2fa_to_devices(&self) -> LoginResponse {
+//         self.account.send_2fa_to_devices().unwrap()
+//     }
+// }
 
-impl Send2FAToDevices {
-    pub fn send_2fa_to_devices(&self) -> LoginResponse {
-        let client = self.account.clone();
-        let response = client.send_2fa_to_devices();
-        if response.is_ok() {
-            LoginResponse::Needs2FAVerification(Verify2FA {
-                account: client,
-                spd: self.spd.clone(),
-            })
-        } else {
-            LoginResponse::Failed(Error::AuthSrp)
-        }
-    }
-}
-
-impl Verify2FA {
-    pub fn verify_2fa(&self, tfa_code: &str) -> LoginResponse {
-        let client = self.account.clone();
-        let response = client.verify_2fa(tfa_code);
-        if response.is_ok() {
-            LoginResponse::LoggedIn(client)
-        } else {
-            LoginResponse::Failed(Error::AuthSrp)
-        }
-    }
-}
+// impl Verify2FA {
+//     pub fn verify_2fa(&self, tfa_code: &str) -> LoginResponse {
+//         self.account.verify_2fa(&tfa_code).unwrap()
+//     }
+// }
 
 impl AppleAccount {
     pub fn new(anisette: AnisetteData) -> Self {
+        let client = ClientBuilder::new()
+            .add_root_certificate(Certificate::from_der(APPLE_ROOT).unwrap())
+            .http1_title_case_headers()
+            .connection_verbose(true)
+            .build()
+            .unwrap();
+
         AppleAccount {
+            client,
             anisette,
             spd: None,
         }
@@ -150,18 +136,20 @@ impl AppleAccount {
         appleid_closure: F,
         tfa_closure: G,
         anisette: AnisetteData,
-    ) -> Result<LoginResponse, Error> {
-        let mut _self = AppleAccount {
-            anisette,
-            spd: None,
-        };
+    ) -> Result<AppleAccount, Error> {
+        let mut _self = AppleAccount::new(anisette);
         let (username, password) = appleid_closure();
-        let mut response = _self.login_email_pass(username, password)?;
+        let mut response = _self.login_email_pass(username.clone(), password.clone())?;
         loop {
             match response {
-                LoginResponse::NeedsDevice2FA(cb) => response = cb.send_2fa_to_devices(),
-                LoginResponse::Needs2FAVerification(cb) => response = cb.verify_2fa(&tfa_closure()),
-                LoginResponse::LoggedIn(_) => return Ok(response),
+                LoginResponse::NeedsDevice2FA() => response = _self.send_2fa_to_devices().unwrap(),
+                LoginResponse::Needs2FAVerification() => {
+                    response = _self.verify_2fa(tfa_closure()).unwrap()
+                }
+                LoginResponse::NeedsLogin() => {
+                    response = _self.login_email_pass(username.clone(), password.clone())?
+                }
+                LoginResponse::LoggedIn(ac) => return Ok(ac),
                 LoginResponse::Failed(e) => return Err(e),
             }
         }
@@ -172,9 +160,34 @@ impl AppleAccount {
         username: String,
         password: String,
     ) -> Result<LoginResponse, Error> {
-        let client = SrpClient::<Sha256>::new(&G_2048);
+        let parse_response = |res: Result<Response, reqwest::Error>| {
+            let res: plist::Dictionary =
+                plist::from_bytes(res.unwrap().text().unwrap().as_bytes()).unwrap();
+            let res: plist::Value = res.get("Response").unwrap().to_owned();
+            match res {
+                plist::Value::Dictionary(dict) => dict,
+                _ => panic!("Invalid response"),
+            }
+        };
+
+        let srp_client = SrpClient::<Sha256>::new(&G_2048);
         let a: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
-        let a_pub = client.compute_public_ephemeral(&a);
+        let a_pub = srp_client.compute_public_ephemeral(&a);
+
+        let mut gsa_headers = HeaderMap::new();
+        gsa_headers.insert(
+            "Content-Type",
+            HeaderValue::from_str("text/x-xml-plist").unwrap(),
+        );
+        gsa_headers.insert("Accept", HeaderValue::from_str("*/*").unwrap());
+        gsa_headers.insert(
+            "User-Agent",
+            HeaderValue::from_str("akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0").unwrap(),
+        );
+        gsa_headers.insert(
+            "X-MMe-Client-Info",
+            HeaderValue::from_str(&self.anisette.x_mme_client_info).unwrap(),
+        );
 
         let header = RequestHeader {
             version: "1.0.1".to_string(),
@@ -195,39 +208,23 @@ impl AppleAccount {
         let mut buffer = Vec::new();
         plist::to_writer_xml(&mut buffer, &packet).unwrap();
         let buffer = String::from_utf8(buffer).unwrap();
-        println!("Body: {buffer}");
 
-        let mut store = RootCertStore::empty();
-        store.add_parsable_certificates(&[APPLE_ROOT.to_vec()]);
-        let rustls_cli = ClientConfig::builder()
-            .with_safe_defaults()
-            .with_root_certificates(store)
-            .with_no_client_auth();
-        let agent = AgentBuilder::new().tls_config(Arc::new(rustls_cli)).build();
-        let res = agent
+        let res = self
+            .client
             .post(GSA_ENDPOINT)
-            .set("Content-Type", "text/x-xml-plist")
-            .set("Accept", "*/*")
-            .set("User-Agent", "akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0")
-            .set("X-MMe-Client-Info", &self.anisette.x_mme_client_info)
-            .send_string(&buffer)
-            .unwrap();
+            .headers(gsa_headers.clone())
+            .body(buffer)
+            .send();
 
-        let res = res.into_string().unwrap();
-
-        println!("{res}");
-
-        let res: plist::Dictionary = plist::from_bytes(res.as_bytes()).unwrap();
-        let res: plist::Value = res.get("Response").unwrap().to_owned();
-        let res = match res {
-            plist::Value::Dictionary(dict) => dict,
-            _ => panic!("Invalid response"),
-        };
+        let res = parse_response(res);
+        let err_check = Self::check_error(&res);
+        if err_check.is_err() {
+            return Err(err_check.err().unwrap());
+        }
+        println!("{:?}", res);
         let salt = res.get("s").unwrap().as_data().unwrap();
-        println!("Salt (base64): {}", base64::encode(salt));
         let b_pub = res.get("B").unwrap().as_data().unwrap();
         let iters = res.get("i").unwrap().as_signed_integer().unwrap();
-        println!("Iterations: {}", iters);
         let c = res.get("c").unwrap().as_string().unwrap();
 
         let mut password_hasher = sha2::Sha256::new();
@@ -242,12 +239,11 @@ impl AppleAccount {
             &mut password_buf,
         );
 
-        let verifier: SrpClientVerifier<Sha256> = client
+        let verifier: SrpClientVerifier<Sha256> = srp_client
             .process_reply(&a, &username.as_bytes(), &password_buf, salt, b_pub)
             .unwrap();
 
         let m = verifier.proof();
-        println!("M: {:?}", m);
 
         let body = ChallengeRequestBody {
             m: plist::Value::Data(m.to_vec()),
@@ -265,34 +261,22 @@ impl AppleAccount {
         let mut buffer = Vec::new();
         plist::to_writer_xml(&mut buffer, &packet).unwrap();
         let buffer = String::from_utf8(buffer).unwrap();
-        println!("Body: {buffer}");
 
-        let res = agent
+        let res = self
+            .client
             .post(GSA_ENDPOINT)
-            .set("Content-Type", "text/x-xml-plist")
-            .set("Accept", "*/*")
-            .set("User-Agent", "akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0")
-            .set("X-MMe-Client-Info", &self.anisette.x_mme_client_info)
-            .send_string(&buffer)
-            .unwrap();
+            .headers(gsa_headers.clone())
+            .body(buffer)
+            .send();
 
-        let res = res.into_string().unwrap();
-
-        println!("{res}");
-
-        let res: plist::Dictionary = plist::from_bytes(res.as_bytes()).unwrap();
-        let res: plist::Value = res.get("Response").unwrap().to_owned();
-        let res = match res {
-            plist::Value::Dictionary(dict) => dict,
-            _ => panic!("Invalid response"),
-        };
-
+        let res = parse_response(res);
+        let err_check = Self::check_error(&res);
+        if err_check.is_err() {
+            return Err(err_check.err().unwrap());
+        }
+        println!("{:?}", res);
         let m2 = res.get("M2").unwrap().as_data().unwrap();
-        println!("M2: {:?}", m2);
         verifier.verify_server(&m2).unwrap();
-
-        print!("Success!");
-        println!("shared key {:?}", base64::encode(verifier.key()));
 
         let spd = res.get("spd").unwrap().as_data().unwrap();
         let decrypted_spd = Self::decrypt_cbc(&verifier, spd);
@@ -300,7 +284,7 @@ impl AppleAccount {
 
         let status = res.get("Status").unwrap().as_dictionary().unwrap();
 
-        let needs2FA = match status.get("au") {
+        let needs2fa = match status.get("au") {
             Some(plist::Value::String(s)) => {
                 if s == "trustedDeviceSecondaryAuth" {
                     println!("Trusted device authentication required");
@@ -314,16 +298,13 @@ impl AppleAccount {
             _ => false,
         };
 
-        // if needs 2fa, return enum needs2fa
+        self.spd = Some(decoded_spd);
 
-        if needs2FA {
-            return Ok(LoginResponse::NeedsDevice2FA(Send2FAToDevices {
-                account: self.clone(),
-                spd: decoded_spd,
-            }));
+        if needs2fa {
+            return Ok(LoginResponse::NeedsDevice2FA());
         }
 
-        Ok(LoginResponse::LoggedIn(self.clone()))
+        Ok(LoginResponse::LoggedIn(self.clone().to_owned()))
     }
 
     fn create_session_key(usr: &SrpClientVerifier<Sha256>, name: &str) -> Vec<u8> {
@@ -346,10 +327,102 @@ impl AppleAccount {
             .unwrap()
     }
 
-    pub fn send_2fa_to_devices(&self) -> Result<(), Error> {
-        todo!()
+    pub fn send_2fa_to_devices(&self) -> Result<LoginResponse, crate::Error> {
+        let headers = self.build_2fa_headers();
+
+        let res = self
+            .client
+            .get("https://gsa.apple.com/auth/verify/trusteddevice")
+            .headers(headers)
+            .send();
+
+        if !res.as_ref().unwrap().status().is_success() {
+            return Err(Error::AuthSrp);
+        }
+
+        return Ok(LoginResponse::Needs2FAVerification());
     }
-    pub fn verify_2fa(&self, code: &str) -> Result<(), Error> {
-        todo!()
+    pub fn verify_2fa(&self, code: String) -> Result<LoginResponse, Error> {
+        let headers = self.build_2fa_headers();
+        println!("Recieved code: {}", code);
+        let res = self
+            .client
+            .get("https://gsa.apple.com/grandslam/GsService2/validate")
+            .headers(headers)
+            .header(
+                HeaderName::from_str("security-code").unwrap(),
+                HeaderValue::from_str(&code).unwrap(),
+            )
+            .send();
+
+        let res: plist::Dictionary =
+            plist::from_bytes(res.unwrap().text().unwrap().as_bytes()).unwrap();
+
+        let err_check = Self::check_error(&res);
+        if err_check.is_err() {
+            return Err(err_check.err().unwrap());
+        }
+
+        Ok(LoginResponse::LoggedIn(self.clone()))
+    }
+
+    fn check_error(res: &plist::Dictionary) -> Result<(), Error> {
+        let res = match res.get("Status") {
+            Some(plist::Value::Dictionary(d)) => d,
+            _ => &res,
+        };
+
+        if res.get("ec").unwrap().as_signed_integer().unwrap() != 0 {
+            return Err(Error::AuthSrpWithMessage(
+                res.get("ec").unwrap().as_signed_integer().unwrap(),
+                res.get("em").unwrap().as_string().unwrap().to_owned(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    fn build_2fa_headers(&self) -> HeaderMap {
+        let spd = self.spd.as_ref().unwrap();
+        let dsid = spd.get("adsid").unwrap().as_string().unwrap();
+        let token = spd.get("GsIdmsToken").unwrap().as_string().unwrap();
+
+        let identity_token = base64::encode(format!("{}:{}", dsid, token));
+
+        let mut headers = HeaderMap::new();
+        self.anisette.headers_dict(true).iter().for_each(|(k, v)| {
+            headers.append(
+                HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                HeaderValue::from_str(v.as_string().unwrap()).unwrap(),
+            );
+        });
+
+        headers.insert(
+            "Content-Type",
+            HeaderValue::from_str("text/x-xml-plist").unwrap(),
+        );
+        headers.insert("Accept", HeaderValue::from_str("text/x-xml-plist").unwrap());
+        headers.insert("User-Agent", HeaderValue::from_str("Xcode").unwrap());
+        headers.insert("Accept-Language", HeaderValue::from_str("en-us").unwrap());
+        headers.append(
+            "X-Apple-Identity-Token",
+            HeaderValue::from_str(&identity_token).unwrap(),
+        );
+        headers.insert(
+            "X-Apple-App-Info",
+            HeaderValue::from_str("com.apple.gs.xcode.auth").unwrap(),
+        );
+
+        headers.insert(
+            "X-Xcode-Version",
+            HeaderValue::from_str("11.2 (11B41)").unwrap(),
+        );
+
+        headers.insert(
+            "Loc",
+            HeaderValue::from_str(&self.anisette.x_apple_locale).unwrap(),
+        );
+
+        headers
     }
 }
