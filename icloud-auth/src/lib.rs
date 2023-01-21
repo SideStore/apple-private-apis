@@ -1,8 +1,9 @@
 pub mod anisette;
-pub mod request;
-
+mod client;
+pub use client::AppleAccount;
 #[derive(Debug)]
 pub enum Error {
     HttpRequest,
     Parse,
+    AuthSrp,
 }

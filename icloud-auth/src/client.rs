@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
 use crate::anisette::AnisetteData;
-
+use crate::Error;
+use aes::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use hmac::{Hmac, Mac};
-use num_bigint::BigUint;
 use rustls::{ClientConfig, RootCertStore};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -12,29 +10,14 @@ use srp::{
     client::{SrpClient, SrpClientVerifier},
     groups::G_2048,
 };
+use std::sync::Arc;
 use ureq::AgentBuilder;
-
-use aes::cipher::{
-    block_padding::{Padding, Pkcs7},
-    generic_array::GenericArray,
-    BlockEncryptMut, BlockSizeUser,
-};
 
 type Aes128CbcEnc = cbc::Encryptor<aes::Aes128>;
 type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
 
 const GSA_ENDPOINT: &str = "https://gsa.apple.com/grandslam/GsService2";
 const APPLE_ROOT: &[u8] = include_bytes!("./apple_root.der");
-
-pub struct GsaClient {
-    // client: SrpClient<'a, Sha256>,
-    // a: [u8; 64],
-    // a_pub: Vec<u8>,
-    // b_pub: Vec<u8>,
-    // salt: Vec<u8>,
-    // username: String,
-    // password: String,
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InitRequestBody {
@@ -54,24 +37,141 @@ pub struct RequestHeader {
     version: String,
 }
 
-pub struct GSAResponse {
-    spd: plist::Dictionary,
-    needs2FA: bool,
+#[derive(Debug, Serialize, Deserialize)]
+pub struct InitRequest {
+    #[serde(rename = "Header")]
+    header: RequestHeader,
+    #[serde(rename = "Request")]
+    request: InitRequestBody,
 }
 
-impl GsaClient {
-    pub fn new(username: String, password: String, anisette: AnisetteData) -> Self {
-        let response = Self::get_response(username, password, anisette);
-        // if we need 2fa, call it
-        if response.needs2FA {
-            device_tfa(response.spd, anisette);
-            return Self::new(username, password, anisette);
-        }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChallengeRequestBody {
+    #[serde(rename = "M1")]
+    m: plist::Value,
+    cpd: plist::Dictionary,
+    c: String,
+    #[serde(rename = "o")]
+    operation: String,
+    #[serde(rename = "u")]
+    username: String,
+}
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChallengeRequest {
+    #[serde(rename = "Header")]
+    header: RequestHeader,
+    #[serde(rename = "Request")]
+    request: ChallengeRequestBody,
+}
 
-        todo!()
+#[derive(Clone)]
+pub struct AppleAccount {
+    //TODO: move this to omnisette
+    pub anisette: AnisetteData,
+    pub spd: Option<plist::Dictionary>,
+}
+//Just make it return a custom enum, with LoggedIn(account: AppleAccount) or Needs2FA(FinishLoginDel: fn(i32) -> TFAResponse)
+pub enum LoginResponse {
+    LoggedIn(AppleAccount),
+    // NeedsSMS2FASent(Send2FAToDevices),
+    NeedsDevice2FA(Send2FAToDevices),
+    Needs2FAVerification(Verify2FA),
+    Failed(Error),
+}
+
+//Send2FAToDevices and Verify2FA are just functions that take the same arguments as the original functions, but return a LoginResponse
+//This way, you can just call the function and get a LoginResponse, and you don't have to worry about the state of the AppleAccount
+//You can also just make them methods on AppleAccount, but I think this is cleaner
+pub struct Send2FAToDevices {
+    pub account: AppleAccount,
+    pub spd: plist::Dictionary,
+}
+pub struct Verify2FA {
+    pub account: AppleAccount,
+    pub spd: plist::Dictionary,
+}
+
+impl Send2FAToDevices {
+    pub fn send_2fa_to_devices(&self) -> LoginResponse {
+        let client = self.account.clone();
+        let response = client.send_2fa_to_devices();
+        if response.is_ok() {
+            LoginResponse::Needs2FAVerification(Verify2FA {
+                account: client,
+                spd: self.spd.clone(),
+            })
+        } else {
+            LoginResponse::Failed(Error::AuthSrp)
+        }
+    }
+}
+
+impl Verify2FA {
+    pub fn verify_2fa(&self, tfa_code: &str) -> LoginResponse {
+        let client = self.account.clone();
+        let response = client.verify_2fa(tfa_code);
+        if response.is_ok() {
+            LoginResponse::LoggedIn(client)
+        } else {
+            LoginResponse::Failed(Error::AuthSrp)
+        }
+    }
+}
+
+impl AppleAccount {
+    pub fn new(anisette: AnisetteData) -> Self {
+        AppleAccount {
+            anisette,
+            spd: None,
+        }
     }
 
-    pub fn get_response(username: String, password: String, anisette: AnisetteData) -> GSAResponse {
+    /// # Arguments
+    ///
+    /// * `appleid_closure` - A closure that takes no arguments and returns a tuple of the Apple ID and password
+    /// * `tfa_closure` - A closure that takes no arguments and returns the 2FA code
+    /// * `anisette` - AnisetteData
+    /// # Examples
+    ///
+    /// ```
+    /// use icloud_auth::AppleAccount;
+    /// use omnisette::AnisetteData;
+    ///
+    /// let anisette = AnisetteData::new();
+    /// let account = AppleAccount::login(
+    ///   || ("test@waffle.me", "password")
+    ///   || "123123",
+    ///  anisette
+    /// );
+    /// ```
+    /// Note: You would not provide the 2FA code like this, you would have to actually ask input for it.
+    //TODO: add login_with_anisette and login, where login autodetcts anisette
+    pub fn login<F: Fn() -> (String, String), G: Fn() -> String>(
+        appleid_closure: F,
+        tfa_closure: G,
+        anisette: AnisetteData,
+    ) -> Result<LoginResponse, Error> {
+        let mut _self = AppleAccount {
+            anisette,
+            spd: None,
+        };
+        let (username, password) = appleid_closure();
+        let mut response = _self.login_email_pass(username, password)?;
+        loop {
+            match response {
+                LoginResponse::NeedsDevice2FA(cb) => response = cb.send_2fa_to_devices(),
+                LoginResponse::Needs2FAVerification(cb) => response = cb.verify_2fa(&tfa_closure()),
+                LoginResponse::LoggedIn(_) => return Ok(response),
+                LoginResponse::Failed(e) => return Err(e),
+            }
+        }
+    }
+
+    pub fn login_email_pass(
+        &mut self,
+        username: String,
+        password: String,
+    ) -> Result<LoginResponse, Error> {
         let client = SrpClient::<Sha256>::new(&G_2048);
         let a: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
         let a_pub = client.compute_public_ephemeral(&a);
@@ -81,19 +181,11 @@ impl GsaClient {
         };
         let body = InitRequestBody {
             a_pub: plist::Value::Data(a_pub),
-            cpd: anisette.to_cpd(),
+            cpd: self.anisette.to_cpd(),
             operation: "init".to_string(),
             ps: vec!["s2k".to_string(), "s2k_fo".to_string()],
             username: username.clone(),
         };
-
-        #[derive(Debug, Serialize, Deserialize)]
-        struct InitRequest {
-            #[serde(rename = "Header")]
-            header: RequestHeader,
-            #[serde(rename = "Request")]
-            request: InitRequestBody,
-        }
 
         let packet = InitRequest {
             header: header.clone(),
@@ -117,7 +209,7 @@ impl GsaClient {
             .set("Content-Type", "text/x-xml-plist")
             .set("Accept", "*/*")
             .set("User-Agent", "akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0")
-            .set("X-MMe-Client-Info", &anisette.x_mme_client_info)
+            .set("X-MMe-Client-Info", &self.anisette.x_mme_client_info)
             .send_string(&buffer)
             .unwrap();
 
@@ -157,33 +249,13 @@ impl GsaClient {
         let m = verifier.proof();
         println!("M: {:?}", m);
 
-        #[derive(Debug, Serialize, Deserialize)]
-        struct ChallengeRequestBody {
-            #[serde(rename = "M1")]
-            m: plist::Value,
-            cpd: plist::Dictionary,
-            c: String,
-            #[serde(rename = "o")]
-            operation: String,
-            #[serde(rename = "u")]
-            username: String,
-        }
-
         let body = ChallengeRequestBody {
             m: plist::Value::Data(m.to_vec()),
             c: c.to_string(),
-            cpd: anisette.to_cpd(),
+            cpd: self.anisette.to_cpd(),
             operation: "complete".to_string(),
             username,
         };
-
-        #[derive(Debug, Serialize, Deserialize)]
-        struct ChallengeRequest {
-            #[serde(rename = "Header")]
-            header: RequestHeader,
-            #[serde(rename = "Request")]
-            request: ChallengeRequestBody,
-        }
 
         let packet = ChallengeRequest {
             header,
@@ -200,7 +272,7 @@ impl GsaClient {
             .set("Content-Type", "text/x-xml-plist")
             .set("Accept", "*/*")
             .set("User-Agent", "akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0")
-            .set("X-MMe-Client-Info", &anisette.x_mme_client_info)
+            .set("X-MMe-Client-Info", &self.anisette.x_mme_client_info)
             .send_string(&buffer)
             .unwrap();
 
@@ -242,13 +314,18 @@ impl GsaClient {
             _ => false,
         };
 
-        GSAResponse {
-            spd: decoded_spd,
-            needs2FA: needs2FA,
+        // if needs 2fa, return enum needs2fa
+
+        if needs2FA {
+            return Ok(LoginResponse::NeedsDevice2FA(Send2FAToDevices {
+                account: self.clone(),
+                spd: decoded_spd,
+            }));
         }
+
+        Ok(LoginResponse::LoggedIn(self.clone()))
     }
 
-    fn device_tfa(spd: plist::Dictionary, anisette: AnisetteData) {}
     fn create_session_key(usr: &SrpClientVerifier<Sha256>, name: &str) -> Vec<u8> {
         Hmac::<Sha256>::new_from_slice(&usr.key())
             .unwrap()
@@ -267,5 +344,12 @@ impl GsaClient {
             .unwrap()
             .decrypt_padded_vec_mut::<Pkcs7>(&data)
             .unwrap()
+    }
+
+    pub fn send_2fa_to_devices(&self) -> Result<(), Error> {
+        todo!()
+    }
+    pub fn verify_2fa(&self, code: &str) -> Result<(), Error> {
+        todo!()
     }
 }
