@@ -10,13 +10,15 @@ mod tests {
         let ad = anisette::AnisetteData::from_url(anisette::SIDELOADLY_ANISETTE).unwrap();
         print!("{:?}", ad);
         let appleid_closure = move || (email.clone(), password.clone());
-        // ask console for 2fa code
+        // ask console for 2fa code, make sure it is only 6 digits, no extra characters
         let tfa_closure = || {
             println!("Enter 2FA code: ");
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
-            input
+            input.trim().to_string()
         };
-        let _ = AppleAccount::login(appleid_closure, tfa_closure, ad);
+        let acc = AppleAccount::login(appleid_closure, tfa_closure, ad);
+        println!("{:?}", acc.unwrap().spd);
+        println!("gsa auth test done");
     }
 }
