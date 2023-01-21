@@ -1,9 +1,12 @@
+#[cfg(target_family = "windows")]
+mod posix_windows;
+
 use std::collections::HashMap;
 use android_loader::android_library::AndroidLibrary;
 use anyhow::Result;
 use crate::adi_proxy::{ADIError, ADIProxy, ConfigurableADIProxy, RequestOTPData, StartProvisioningData, SynchronizeData};
-use std::ffi::{c_char, CString};
-use std::path::{Path, PathBuf};
+use std::ffi::{c_char, CStr, CString};
+use std::path::PathBuf;
 use android_loader::android_loader::AndroidLoader;
 use android_loader::hook_manager;
 
@@ -284,21 +287,43 @@ impl ConfigurableADIProxy for StoreServicesCoreADIProxy {
     }
 }
 
+#[allow(dead_code)]
 struct LoaderHelpers;
 
 use rand::Rng;
 
 #[cfg(target_family = "unix")]
-use libc::{__errno_location, chmod, close, free, fstat, ftruncate, gettimeofday, lstat, malloc, mkdir, open, read, strncpy, umask, write};
-use machineid_rs::IdBuilder;
+use libc::{chmod, close, free, fstat, ftruncate, gettimeofday, lstat, malloc, mkdir, open, read, strncpy, umask, write};
+
+static mut ERRNO: i32 = 0;
+
+unsafe extern "C" fn __errno_location() -> *mut i32 {
+    ERRNO = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+    &mut ERRNO
+}
 
 extern "C" fn arc4random() -> u32 {
     rand::thread_rng().gen()
 }
 
-unsafe extern "C" fn __system_property_get(name: *const c_char, value: *mut c_char) -> i32 {
+unsafe extern "C" fn __system_property_get(_name: *const c_char, value: *mut c_char) -> i32 {
     *value = '0' as c_char;
     return 1;
+}
+
+use libc::puts;
+
+unsafe extern "C" fn dlopen_test(_name: *const c_char) -> i32 {
+    println!("Will crash !");
+    puts(_name);
+    return 0;
+}
+
+static mut HELLO: [u8; 32] = [0; 32];
+
+unsafe extern "C" fn malloc_hk() -> *mut () {
+    println!("plzase");
+    HELLO.as_mut_ptr() as *mut ()
 }
 
 #[cfg(target_family = "unix")]
@@ -328,9 +353,14 @@ impl LoaderHelpers {
 }
 
 #[cfg(target_family = "windows")]
+use posix_windows::*;
+
+#[cfg(target_family = "windows")]
 impl LoaderHelpers {
     pub fn setup_hooks() {
+        println!("format !");
         let mut hooks = HashMap::new();
+        hooks.insert("dlopen".to_owned(), dlopen_test as usize);
         hooks.insert("arc4random".to_owned(), arc4random as usize);
         hooks.insert("chmod".to_owned(), chmod as usize);
         hooks.insert("close".to_owned(), close as usize);

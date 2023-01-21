@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::time::SystemTime;
 use anyhow::Result;
 use base64::Engine;
-use chrono::{DateTime, Utc};
 use machineid_rs::{Encryption, HWIDComponent, IdBuilder};
-use reqwest::blocking::{Client, ClientBuilder, RequestBuilder};
+use reqwest::blocking::{Client, ClientBuilder};
 use reqwest::header::{HeaderMap, HeaderValue};
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 

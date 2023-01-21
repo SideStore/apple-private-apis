@@ -14,11 +14,18 @@ reqwest = { version = "0.11", features = ["blocking", "json"] }
 [target.'cfg(not(target_env = "macos"))'.dependencies]
 android-loader = { git = "https://github.com/Dadoum/android-loader" }
 base64 = "0.21.0"
-chrono = "0.4.21"
 libc = "0.2.139"
 machineid-rs = "1.2.2"
 plist = "1.4.0"
 rand = "0.8.4"
+
+[target.'cfg(target_family = "windows")'.dependencies.windows-sys]
+version = "0.45.0"
+features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_SystemInformation"
+]
 
 [target.'cfg(target_env = "macos")'.dependencies]
 dlopen2 = "0.4.1"

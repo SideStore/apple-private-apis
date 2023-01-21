@@ -6,4 +6,4 @@ Cargo.lock
 # IDE generated files
 .idea
 
-/omnisette/anisette_test/
+anisette_test/

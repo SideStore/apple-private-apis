@@ -1,6 +1,6 @@
 use anyhow::Result;
 use std::fmt::Formatter;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 use crate::adi_proxy::{ADIProxyAnisetteProvider, ConfigurableADIProxy};
 
@@ -16,6 +16,7 @@ mod aos_kit;
 #[cfg(feature = "remote-anisette")]
 mod remote_anisette;
 
+#[allow(dead_code)]
 struct AnisetteHeaders;
 
 #[derive(Debug)]
@@ -93,7 +94,6 @@ impl AnisetteHeaders {
 #[cfg(test)]
 mod tests {
     use anyhow::Result;
-    use std::any::type_name;
     use std::path::PathBuf;
     use crate::{AnisetteConfiguration, AnisetteHeaders};
 
