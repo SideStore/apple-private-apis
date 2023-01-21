@@ -54,7 +54,7 @@ impl AnisetteData {
         Ok(body)
     }
 
-    pub fn to_cpd(&self) -> plist::Dictionary {
+    pub fn headers_dict(&self, client_info: bool) -> plist::Dictionary {
         let mut cpd = plist::Dictionary::new();
         cpd.insert(
             "X-Apple-I-Client-Time".to_owned(),
@@ -73,11 +73,8 @@ impl AnisetteData {
             plist::Value::String(self.x_apple_i_md_m.clone()),
         );
 
-        let rinfo = self.x_apple_i_md_rinfo.parse::<u32>().unwrap();
-        cpd.insert(
-            "X-Apple-I-MD-RINFO".to_owned(),
-            plist::Value::Integer(rinfo.into()),
-        );
+        let rinfo = self.x_apple_i_md_rinfo.clone();
+        cpd.insert("X-Apple-I-MD-RINFO".to_owned(), plist::Value::String(rinfo));
         cpd.insert(
             "X-Apple-I-SRL-NO".to_owned(),
             plist::Value::String(self.x_apple_i_srl_no.clone()),
@@ -94,6 +91,17 @@ impl AnisetteData {
             "X-Mme-Device-Id".to_owned(),
             plist::Value::String(self.x_mme_device_id.clone()),
         );
+        if client_info {
+            cpd.insert(
+                "X-MMe-Client-Info".to_owned(),
+                plist::Value::String(self.x_mme_client_info.clone()),
+            );
+        }
+        cpd
+    }
+
+    pub fn to_cpd(&self) -> plist::Dictionary {
+        let mut cpd = self.headers_dict(false);
         cpd.insert("bootstrap".to_owned(), plist::Value::Boolean(true));
         cpd.insert("icscrec".to_owned(), plist::Value::Boolean(true));
         cpd.insert("loc".to_owned(), plist::Value::String("en_GB".to_owned()));

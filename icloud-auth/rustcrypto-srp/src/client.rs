@@ -238,8 +238,6 @@ impl<D: Digest> SrpClientVerifier<D> {
 
     /// Verify server reply to verification data.
     pub fn verify_server(&self, reply: &[u8]) -> Result<(), SrpAuthError> {
-        println!("local m2: {:?}", base64::encode(&self.m2));
-        println!("remote m2: {:?}", base64::encode(reply));
         if self.m2.ct_eq(reply).unwrap_u8() != 1 {
             // aka == 0
             Err(SrpAuthError::BadRecordMac("server".to_owned()))

@@ -6,4 +6,5 @@ pub enum Error {
     HttpRequest,
     Parse,
     AuthSrp,
+    AuthSrpWithMessage(i64, String),
 }
