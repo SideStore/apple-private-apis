@@ -1,114 +1,96 @@
-// Jackson Coxson
-
-//TODO: delete this file, use omnisette
-use serde::{Deserialize, Serialize};
-
 use crate::Error;
+use omnisette::{AnisetteConfiguration, AnisetteHeaders};
+use std::{collections::HashMap, path::PathBuf};
 
-pub const SIDELOADLY_ANISETTE: &str = "https://ani.f1sh.me/";
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct AnisetteData {
-    #[serde(rename(deserialize = "X-Apple-I-Client-Time"))]
-    pub x_apple_i_client_time: String,
-    #[serde(rename(deserialize = "X-Apple-I-MD"))]
-    pub x_apple_i_md: String,
-    #[serde(rename(deserialize = "X-Apple-I-MD-LU"))]
-    pub x_apple_i_md_lu: String,
-    #[serde(rename(deserialize = "X-Apple-I-MD-M"))]
-    pub x_apple_i_md_m: String,
-    #[serde(rename(deserialize = "X-Apple-I-MD-RINFO"))]
-    pub x_apple_i_md_rinfo: String,
-    #[serde(rename(deserialize = "X-Apple-I-SRL-NO"))]
-    pub x_apple_i_srl_no: String,
-    #[serde(rename(deserialize = "X-Apple-I-TimeZone"))]
-    pub x_apple_i_timezone: String,
-    #[serde(rename(deserialize = "X-Apple-Locale"))]
-    pub x_apple_locale: String,
-    #[serde(rename(deserialize = "X-MMe-Client-Info"))]
-    pub x_mme_client_info: String,
-    #[serde(rename(deserialize = "X-Mme-Device-Id"))]
-    pub x_mme_device_id: String,
+    pub base_headers: HashMap<String, String>,
 }
 
 impl AnisetteData {
     /// Fetches the data at an anisette server
-    pub fn from_url(url: impl Into<String>) -> Result<Self, crate::Error> {
-        let body = match reqwest::blocking::get(&url.into()) {
-            Ok(b) => match b.text() {
+    pub fn new() -> Result<Self, crate::Error> {
+        let mut base_headers = match AnisetteHeaders::get_anisette_headers_provider(
+            AnisetteConfiguration::new()
+                .set_configuration_path(PathBuf::new().join("anisette_test"))
+                .set_anisette_url("https://ani.f1sh.me".to_string()),
+        ) {
+            Ok(mut b) => match b.get_authentication_headers() {
                 Ok(b) => b,
-                Err(_) => {
-                    return Err(Error::HttpRequest);
-                }
+                Err(_) => return Err(Error::ErrorGettingAnisette),
             },
             Err(_) => {
                 return Err(Error::HttpRequest);
             }
         };
 
-        let body = match serde_json::from_str::<AnisetteData>(&body) {
-            Ok(b) => b,
-            Err(_) => return Err(Error::Parse),
-        };
-
-        Ok(body)
+        Ok(AnisetteData { base_headers })
     }
 
-    pub fn headers_dict(&self, client_info: bool) -> plist::Dictionary {
-        let mut cpd = plist::Dictionary::new();
-        cpd.insert(
-            "X-Apple-I-Client-Time".to_owned(),
-            plist::Value::String(self.x_apple_i_client_time.clone()),
-        );
-        cpd.insert(
-            "X-Apple-I-MD".to_owned(),
-            plist::Value::String(self.x_apple_i_md.clone()),
-        );
-        cpd.insert(
-            "X-Apple-I-MD-LU".to_owned(),
-            plist::Value::String(self.x_apple_i_md_lu.clone()),
-        );
-        cpd.insert(
-            "X-Apple-I-MD-M".to_owned(),
-            plist::Value::String(self.x_apple_i_md_m.clone()),
-        );
-
-        let rinfo = self.x_apple_i_md_rinfo.clone();
-        cpd.insert("X-Apple-I-MD-RINFO".to_owned(), plist::Value::String(rinfo));
-        cpd.insert(
-            "X-Apple-I-SRL-NO".to_owned(),
-            plist::Value::String(self.x_apple_i_srl_no.clone()),
-        );
-        cpd.insert(
-            "X-Apple-I-TimeZone".to_owned(),
-            plist::Value::String(self.x_apple_i_timezone.clone()),
-        );
-        cpd.insert(
-            "X-Apple-Locale".to_owned(),
-            plist::Value::String(self.x_apple_locale.clone()),
-        );
-        cpd.insert(
-            "X-Mme-Device-Id".to_owned(),
-            plist::Value::String(self.x_mme_device_id.clone()),
-        );
+    pub fn generate_headers(
+        &self,
+        cpd: bool,
+        client_info: bool,
+        app_info: bool,
+    ) -> HashMap<String, String> {
+        let mut headers = self.base_headers.clone();
+        let old_client_info = headers.remove("X-Mme-Client-Info");
         if client_info {
-            cpd.insert(
-                "X-MMe-Client-Info".to_owned(),
-                plist::Value::String(self.x_mme_client_info.clone()),
-            );
+            let client_info = match old_client_info {
+                Some(v) => {
+                    let temp = v.as_str();
+
+                    temp.replace(
+                        temp.split('<').nth(3).unwrap().split('>').nth(0).unwrap(),
+                        "com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)",
+                    )
+                }
+                None => {
+                    return headers;
+                }
+            };
+            headers.insert("X-Mme-Client-Info".to_owned(), client_info.to_owned());
         }
-        cpd
+
+        if app_info {
+            headers.insert(
+                "X-Apple-App-Info".to_owned(),
+                "com.apple.gs.xcode.auth".to_owned(),
+            );
+            headers.insert("X-Xcode-Version".to_owned(), "11.2 (11B41)".to_owned());
+        }
+
+        if cpd {
+            headers.insert("bootstrap".to_owned(), "true".to_owned());
+            headers.insert("icscrec".to_owned(), "true".to_owned());
+            headers.insert("loc".to_owned(), "en_GB".to_owned());
+            headers.insert("pbe".to_owned(), "false".to_owned());
+            headers.insert("prkgen".to_owned(), "true".to_owned());
+            headers.insert("svct".to_owned(), "iCloud".to_owned());
+        }
+
+        headers
     }
 
-    pub fn to_cpd(&self) -> plist::Dictionary {
-        let mut cpd = self.headers_dict(false);
-        cpd.insert("bootstrap".to_owned(), plist::Value::Boolean(true));
-        cpd.insert("icscrec".to_owned(), plist::Value::Boolean(true));
-        cpd.insert("loc".to_owned(), plist::Value::String("en_GB".to_owned()));
-        cpd.insert("pbe".to_owned(), plist::Value::Boolean(false));
-        cpd.insert("prkgen".to_owned(), plist::Value::Boolean(true));
-        cpd.insert("svct".to_owned(), plist::Value::String("iCloud".to_owned()));
+    pub fn to_plist(&self, cpd: bool, client_info: bool, app_info: bool) -> plist::Dictionary {
+        let mut plist = plist::Dictionary::new();
+        for (key, value) in self.generate_headers(cpd, client_info, app_info).iter() {
+            plist.insert(key.to_owned(), plist::Value::String(value.to_owned()));
+        }
 
-        cpd
+        plist
+    }
+
+    pub fn get_header(&self, header: &str) -> Result<String, Error> {
+        let headers = self
+            .generate_headers(true, true, true)
+            .iter()
+            .map(|(k, v)| (k.to_lowercase(), v.to_lowercase()))
+            .collect::<HashMap<String, String>>();
+
+        match headers.get(&header.to_lowercase()) {
+            Some(v) => Ok(v.to_string()),
+            None => Err(Error::Parse),
+        }
     }
 }

@@ -1,10 +1,11 @@
 use std::str::FromStr;
 
-use crate::anisette::AnisetteData;
-use crate::Error;
+// use crate::anisette::AnisetteData;
+use crate::{anisette::AnisetteData, Error};
 use aes::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use hmac::{Hmac, Mac};
+use omnisette::{AnisetteConfiguration, AnisetteHeaders};
 use reqwest::{
     blocking::{Client, ClientBuilder, Response},
     header::{HeaderMap, HeaderName, HeaderValue},
@@ -97,7 +98,12 @@ pub enum LoginResponse {
 // }
 
 impl AppleAccount {
-    pub fn new(anisette: AnisetteData) -> Self {
+    pub fn new() -> Self {
+        let anisette = AnisetteData::new();
+        Self::new_with_anisette(anisette.unwrap())
+    }
+
+    pub fn new_with_anisette(anisette: AnisetteData) -> Self {
         let client = ClientBuilder::new()
             .add_root_certificate(Certificate::from_der(APPLE_ROOT).unwrap())
             .http1_title_case_headers()
@@ -110,6 +116,14 @@ impl AppleAccount {
             anisette,
             spd: None,
         }
+    }
+
+    pub fn login(
+        appleid_closure: impl Fn() -> (String, String),
+        tfa_closure: impl Fn() -> String,
+    ) -> Result<AppleAccount, Error> {
+        let anisette = AnisetteData::new();
+        AppleAccount::login_with_anisette(appleid_closure, tfa_closure, anisette.unwrap())
     }
 
     /// # Arguments
@@ -132,12 +146,12 @@ impl AppleAccount {
     /// ```
     /// Note: You would not provide the 2FA code like this, you would have to actually ask input for it.
     //TODO: add login_with_anisette and login, where login autodetcts anisette
-    pub fn login<F: Fn() -> (String, String), G: Fn() -> String>(
+    pub fn login_with_anisette<F: Fn() -> (String, String), G: Fn() -> String>(
         appleid_closure: F,
         tfa_closure: G,
         anisette: AnisetteData,
     ) -> Result<AppleAccount, Error> {
-        let mut _self = AppleAccount::new(anisette);
+        let mut _self = AppleAccount::new_with_anisette(anisette);
         let (username, password) = appleid_closure();
         let mut response = _self.login_email_pass(username.clone(), password.clone())?;
         loop {
@@ -161,8 +175,9 @@ impl AppleAccount {
         password: String,
     ) -> Result<LoginResponse, Error> {
         let parse_response = |res: Result<Response, reqwest::Error>| {
-            let res: plist::Dictionary =
-                plist::from_bytes(res.unwrap().text().unwrap().as_bytes()).unwrap();
+            let res = res.unwrap().text().unwrap();
+            println!("{:?}", res);
+            let res: plist::Dictionary = plist::from_bytes(res.as_bytes()).unwrap();
             let res: plist::Value = res.get("Response").unwrap().to_owned();
             match res {
                 plist::Value::Dictionary(dict) => dict,
@@ -186,7 +201,7 @@ impl AppleAccount {
         );
         gsa_headers.insert(
             "X-MMe-Client-Info",
-            HeaderValue::from_str(&self.anisette.x_mme_client_info).unwrap(),
+            HeaderValue::from_str(&self.anisette.get_header("x-mme-client-info")?).unwrap(),
         );
 
         let header = RequestHeader {
@@ -194,7 +209,7 @@ impl AppleAccount {
         };
         let body = InitRequestBody {
             a_pub: plist::Value::Data(a_pub),
-            cpd: self.anisette.to_cpd(),
+            cpd: self.anisette.to_plist(true, false, false),
             operation: "init".to_string(),
             ps: vec!["s2k".to_string(), "s2k_fo".to_string()],
             username: username.clone(),
@@ -208,6 +223,9 @@ impl AppleAccount {
         let mut buffer = Vec::new();
         plist::to_writer_xml(&mut buffer, &packet).unwrap();
         let buffer = String::from_utf8(buffer).unwrap();
+
+        println!("{:?}", gsa_headers.clone());
+        println!("{:?}", buffer);
 
         let res = self
             .client
@@ -248,7 +266,7 @@ impl AppleAccount {
         let body = ChallengeRequestBody {
             m: plist::Value::Data(m.to_vec()),
             c: c.to_string(),
-            cpd: self.anisette.to_cpd(),
+            cpd: self.anisette.to_plist(true, false, false),
             operation: "complete".to_string(),
             username,
         };
@@ -390,12 +408,15 @@ impl AppleAccount {
         let identity_token = base64::encode(format!("{}:{}", dsid, token));
 
         let mut headers = HeaderMap::new();
-        self.anisette.headers_dict(true).iter().for_each(|(k, v)| {
-            headers.append(
-                HeaderName::from_bytes(k.as_bytes()).unwrap(),
-                HeaderValue::from_str(v.as_string().unwrap()).unwrap(),
-            );
-        });
+        self.anisette
+            .generate_headers(false, true, true)
+            .iter()
+            .for_each(|(k, v)| {
+                headers.append(
+                    HeaderName::from_bytes(k.as_bytes()).unwrap(),
+                    HeaderValue::from_str(v).unwrap(),
+                );
+            });
 
         headers.insert(
             "Content-Type",
@@ -408,19 +429,10 @@ impl AppleAccount {
             "X-Apple-Identity-Token",
             HeaderValue::from_str(&identity_token).unwrap(),
         );
-        headers.insert(
-            "X-Apple-App-Info",
-            HeaderValue::from_str("com.apple.gs.xcode.auth").unwrap(),
-        );
-
-        headers.insert(
-            "X-Xcode-Version",
-            HeaderValue::from_str("11.2 (11B41)").unwrap(),
-        );
 
         headers.insert(
             "Loc",
-            HeaderValue::from_str(&self.anisette.x_apple_locale).unwrap(),
+            HeaderValue::from_str(&self.anisette.get_header("x-apple-locale").unwrap()).unwrap(),
         );
 
         headers

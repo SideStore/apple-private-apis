@@ -16,7 +16,7 @@ mod aos_kit;
 #[cfg(feature = "remote-anisette")]
 mod remote_anisette;
 
-struct AnisetteHeaders;
+pub struct AnisetteHeaders;
 
 #[derive(Debug)]
 enum AnisetteMetaError {
@@ -31,7 +31,7 @@ impl std::fmt::Display for AnisetteMetaError {
 
 pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
-struct AnisetteConfiguration {
+pub struct AnisetteConfiguration {
     anisette_url: String,
     configuration_path: PathBuf,
 }
