@@ -102,7 +102,6 @@ impl AnisetteHeaders {
 mod tests {
     use crate::{AnisetteConfiguration, AnisetteHeaders};
     use anyhow::Result;
-    use std::any::type_name;
     use std::path::PathBuf;
 
     #[test]

@@ -10,7 +10,7 @@ pub struct AnisetteData {
 impl AnisetteData {
     /// Fetches the data at an anisette server
     pub fn new() -> Result<Self, crate::Error> {
-        let mut base_headers = match AnisetteHeaders::get_anisette_headers_provider(
+        let base_headers = match AnisetteHeaders::get_anisette_headers_provider(
             AnisetteConfiguration::new()
                 .set_configuration_path(PathBuf::new().join("anisette_test"))
                 .set_anisette_url("https://ani.f1sh.me".to_string()),

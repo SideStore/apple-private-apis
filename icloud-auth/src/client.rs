@@ -5,7 +5,6 @@ use crate::{anisette::AnisetteData, Error};
 use aes::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use hmac::{Hmac, Mac};
-use omnisette::{AnisetteConfiguration, AnisetteHeaders};
 use reqwest::{
     blocking::{Client, ClientBuilder, Response},
     header::{HeaderMap, HeaderName, HeaderValue},
