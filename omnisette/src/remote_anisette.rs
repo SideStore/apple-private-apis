@@ -20,7 +20,6 @@ impl AnisetteHeadersProvider for RemoteAnisetteProvider {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
     use crate::remote_anisette::RemoteAnisetteProvider;
     use crate::DEFAULT_ANISETTE_URL;

@@ -10,14 +10,14 @@ default = ["remote-anisette"]
 [dependencies]
 anyhow = "1.0"
 base64 = "0.21.0"
-machineid-rs = "1.2.2"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
+plist = "1.4.0"
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 android-loader = { git = "https://github.com/Dadoum/android-loader" }
 libc = "0.2.139"
-plist = "1.4.0"
 rand = "0.8.4"
+machineid-rs = "1.2.2"
 
 [target.'cfg(target_family = "windows")'.dependencies.windows-sys]
 version = "0.45.0"
