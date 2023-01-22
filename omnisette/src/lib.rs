@@ -2,7 +2,7 @@ use crate::adi_proxy::{ADIProxyAnisetteProvider, ConfigurableADIProxy};
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 use anyhow::Result;
 use std::fmt::Formatter;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 mod adi_proxy;
 mod anisette_headers_provider;
@@ -16,7 +16,8 @@ mod aos_kit;
 #[cfg(feature = "remote-anisette")]
 mod remote_anisette;
 
-pub struct AnisetteHeaders;
+#[allow(dead_code)]
+struct AnisetteHeaders;
 
 #[derive(Debug)]
 enum AnisetteMetaError {
@@ -68,23 +69,19 @@ impl AnisetteHeaders {
         configuration: AnisetteConfiguration,
     ) -> Result<Box<dyn AnisetteHeadersProvider>> {
         #[cfg(target_os = "macos")]
-        match aos_kit::AOSKitAnisetteProvider::new() {
-            Ok(prov) => return Ok(Box::new(prov)),
-            Err(_) => {}
+        if let Ok(prov) = aos_kit::AOSKitAnisetteProvider::new() {
+            return Ok(Box::new(prov));
         }
 
         #[cfg(not(target_os = "macos"))]
         {
-            match store_services_core::StoreServicesCoreADIProxy::new(
+            if let Ok(mut ssc_adi_proxy) = store_services_core::StoreServicesCoreADIProxy::new(
                 configuration.configuration_path(),
             ) {
-                Ok(mut ssc_adi_proxy) => {
-                    let _ = ssc_adi_proxy.set_provisioning_path(
-                        configuration.configuration_path().to_str().unwrap(),
-                    );
-                    return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy)?));
-                }
-                Err(_) => {}
+                let _ = ssc_adi_proxy.set_provisioning_path(
+                    configuration.configuration_path().to_str().unwrap(),
+                );
+                return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy)?));
             }
         }
 
