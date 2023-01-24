@@ -16,7 +16,11 @@ mod tests {
             input.trim().to_string()
         };
         let acc = AppleAccount::login(appleid_closure, tfa_closure);
-        println!("{:?}", acc.unwrap().spd);
+        let spd_plist = acc.unwrap().spd.unwrap();
+        // turn plist::dictonary into json
+        let spd_json = serde_json::to_string(&spd_plist).unwrap();
+
+        println!("{:?}", spd_json);
         println!("gsa auth test done");
     }
 }
