@@ -1,13 +1,17 @@
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 use anyhow::Result;
 use base64::Engine;
-use machineid_rs::{Encryption, HWIDComponent, IdBuilder};
 use reqwest::blocking::{Client, ClientBuilder};
 use reqwest::header::{HeaderMap, HeaderValue};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::io::{Read, Write};
+use std::path::PathBuf;
 use plist::Dictionary;
+use rand::RngCore;
+use sha2::{Digest, Sha256};
+use sha2::digest::FixedOutput;
 use crate::adi_proxy::ProvisioningError::InvalidResponse;
 
 #[derive(Debug)]
@@ -273,18 +277,24 @@ pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
 // arbitrary key
 const ADI_KEY: &str = "The most secure key is this one. Not only because it is open-source, but also because I said it, and that it is real. C'est réel en fait. ";
 
-#[cfg(not(target_os = "macos"))]
 impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
-    pub fn new(mut adi_proxy: ProxyType) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
-        let mut identifier = IdBuilder::new(Encryption::SHA1);
-        identifier
-            .add_component(HWIDComponent::MachineName)
-            .add_component(HWIDComponent::SystemID);
+    pub fn new(mut adi_proxy: ProxyType, mut configuration_path: PathBuf) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
+        let identifier_file_path = configuration_path.join("identifier");
+        let mut identifier_file = std::fs::OpenOptions::new().create(true).read(true).write(true).open(identifier_file_path)?;
+        const IDENTIFIER_LENGTH: usize = 16;
+        let mut identifier = [0u8; IDENTIFIER_LENGTH];
+        if identifier_file.metadata()?.len() == IDENTIFIER_LENGTH as u64 {
+            identifier_file.read_exact(&mut identifier)?;
+        } else {
+            rand::thread_rng().fill_bytes(&mut identifier);
+            identifier_file.write_all(&identifier)?;
+        }
 
-        adi_proxy.set_device_identifier(identifier.build(ADI_KEY)?)?;
+        let mut local_user_uuid_hasher = Sha256::new();
+        local_user_uuid_hasher.update(&identifier);
 
-        identifier.hash = Encryption::SHA256;
-        adi_proxy.set_local_user_uuid(identifier.build(ADI_KEY)?.to_ascii_uppercase());
+        adi_proxy.set_device_identifier(uuid::Uuid::from_bytes(identifier).to_string().to_uppercase())?; // UUID, uppercase
+        adi_proxy.set_local_user_uuid(hex::encode(local_user_uuid_hasher.finalize()).to_uppercase()); // 64 uppercase character hex
 
         Ok(ADIProxyAnisetteProvider { adi_proxy })
     }

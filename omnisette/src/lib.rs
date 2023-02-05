@@ -22,6 +22,7 @@ pub struct AnisetteHeaders;
 #[derive(Debug)]
 enum AnisetteMetaError {
     UnsupportedDevice,
+    InvalidArgument(String)
 }
 
 impl std::fmt::Display for AnisetteMetaError {
@@ -29,6 +30,8 @@ impl std::fmt::Display for AnisetteMetaError {
         write!(f, "AnisetteMetaError::{:?}", self)
     }
 }
+
+impl std::error::Error for AnisetteMetaError {}
 
 pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
@@ -78,9 +81,9 @@ impl AnisetteHeaders {
             if let Ok(mut ssc_adi_proxy) = store_services_core::StoreServicesCoreADIProxy::new(
                 configuration.configuration_path(),
             ) {
-                let _ = ssc_adi_proxy
-                    .set_provisioning_path(configuration.configuration_path().to_str().unwrap());
-                return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy)?));
+                let config_path = configuration.configuration_path();
+                ssc_adi_proxy.set_provisioning_path(config_path.to_str().ok_or(AnisetteMetaError::InvalidArgument("configuration.configuration_path".to_string()))?)?;
+                return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy, config_path.to_path_buf())?));
             }
         }
 

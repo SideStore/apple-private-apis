@@ -372,8 +372,9 @@ mod tests {
 
     #[test]
     fn fetch_anisette_ssc() -> Result<()> {
-        let proxy= StoreServicesCoreADIProxy::new(&PathBuf::new().join("anisette_test"))?;
-        let mut provider = ADIProxyAnisetteProvider::new(proxy)?;
+        let path = PathBuf::new().join("anisette_test");
+        let proxy= StoreServicesCoreADIProxy::new(&path)?;
+        let mut provider = ADIProxyAnisetteProvider::new(proxy, path)?;
         println!("SSC headers: {:?}", (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?);
         Ok(())
     }
