@@ -5,10 +5,11 @@ use std::collections::HashMap;
 use android_loader::android_library::AndroidLibrary;
 use anyhow::Result;
 use crate::adi_proxy::{ADIError, ADIProxy, ConfigurableADIProxy, RequestOTPData, StartProvisioningData, SynchronizeData};
-use std::ffi::{c_char, CStr, CString};
+use std::ffi::{c_char, CString};
 use std::path::PathBuf;
 use android_loader::android_loader::AndroidLoader;
-use android_loader::hook_manager;
+use android_loader::{hook_manager, sysv64};
+use android_loader::sysv64_type;
 
 pub struct StoreServicesCoreADIProxy {
     #[allow(dead_code)]
@@ -17,11 +18,11 @@ pub struct StoreServicesCoreADIProxy {
     local_user_uuid: String,
     device_identifier: String,
 
-    adi_set_android_id: extern "C" fn(id: *const u8, length: u32) -> i32,
-    adi_set_provisioning_path: extern "C" fn(path: *const u8) -> i32,
+    adi_set_android_id: sysv64_type!(fn(id: *const u8, length: u32) -> i32),
+    adi_set_provisioning_path: sysv64_type!(fn(path: *const u8) -> i32),
 
-    adi_provisioning_erase: extern "C" fn(ds_id: i64) -> i32,
-    adi_synchronize: extern "C" fn(
+    adi_provisioning_erase: sysv64_type!(fn(ds_id: i64) -> i32),
+    adi_synchronize: sysv64_type!(fn(
         ds_id: i64,
         sim: *const u8,
         sim_length: u32,
@@ -29,32 +30,32 @@ pub struct StoreServicesCoreADIProxy {
         out_mid_length: *mut u32,
         out_srm: *mut *const u8,
         out_srm_length: *mut u32,
-    ) -> i32,
-    adi_provisioning_destroy: extern "C" fn(session: u32) -> i32,
-    adi_provisioning_end: extern "C" fn(
+    ) -> i32),
+    adi_provisioning_destroy: sysv64_type!(fn(session: u32) -> i32),
+    adi_provisioning_end: sysv64_type!(fn(
         session: u32,
         ptm: *const u8,
         ptm_length: u32,
         tk: *const u8,
         tk_length: u32,
-    ) -> i32,
-    adi_provisioning_start: extern "C" fn(
+    ) -> i32),
+    adi_provisioning_start: sysv64_type!(fn(
         ds_id: i64,
         spim: *const u8,
         spim_length: u32,
         out_cpim: *mut *const u8,
         out_cpim_length: *mut u32,
         out_session: *mut u32,
-    ) -> i32,
-    adi_get_login_code: extern "C" fn(ds_id: i64) -> i32,
-    adi_dispose: extern "C" fn(ptr: *const u8) -> i32,
-    adi_otp_request: extern "C" fn(
+    ) -> i32),
+    adi_get_login_code: sysv64_type!(fn(ds_id: i64) -> i32),
+    adi_dispose: sysv64_type!(fn(ptr: *const u8) -> i32),
+    adi_otp_request: sysv64_type!(fn(
         ds_id: i64,
         out_mid: *mut *const u8,
         out_mid_size: *mut u32,
         out_otp: *mut *const u8,
         out_otp_size: *mut u32,
-    ) -> i32,
+    ) -> i32),
 }
 
 impl StoreServicesCoreADIProxy {
@@ -86,11 +87,11 @@ impl StoreServicesCoreADIProxy {
 
             let store_services_core = AndroidLoader::load_library(native_library_path.join("libstoreservicescore.so").to_str().ok_or(ADIStoreSericesCoreErr::Misc)?)?;
 
-            let adi_load_library_with_path: extern "C" fn(path: *const u8) -> i32
+            let adi_load_library_with_path: sysv64_type!(fn(path: *const u8) -> i32)
                 = std::mem::transmute(store_services_core.get_symbol("kq56gsgHG6").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?);
 
             let path = CString::new(native_library_path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?).unwrap();
-            (adi_load_library_with_path)(path.as_ptr() as *const u8);
+            assert_eq!((adi_load_library_with_path)(path.as_ptr() as *const u8), 0);
 
             let adi_set_android_id = store_services_core.get_symbol("Sph98paBcz").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
             let adi_set_provisioning_path = store_services_core.get_symbol("nf92ngaK92").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
@@ -218,8 +219,6 @@ impl ADIProxy for StoreServicesCoreADIProxy {
     }
 
     fn is_machine_provisioned(&self, ds_id: i64) -> bool {
-        println!("is machine provisioned code: {}", (self.adi_get_login_code)(ds_id));
-
         (self.adi_get_login_code)(ds_id) == 0
     }
 
@@ -301,36 +300,38 @@ use libc::{chmod, close, free, fstat, ftruncate, gettimeofday, lstat, malloc, mk
 
 static mut ERRNO: i32 = 0;
 
-unsafe extern "C" fn __errno_location() -> *mut i32 {
+#[cfg(target_family = "windows")]
+extern "C" { fn _errno() -> *mut i32; }
+
+#[allow(unreachable_code)]
+#[sysv64]
+unsafe fn __errno_location() -> *mut i32 {
+    #[cfg(target_family = "windows")]
+    {
+        println!("errno: Windows specific implementation called!");
+        return _errno();
+    }
     ERRNO = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
+
+    println!("errknown: {}", ERRNO);
     &mut ERRNO
 }
 
-extern "C" fn arc4random() -> u32 {
+#[sysv64]
+fn arc4random() -> u32 {
     rand::thread_rng().gen()
 }
 
-unsafe extern "C" fn __system_property_get(_name: *const c_char, value: *mut c_char) -> i32 {
+#[sysv64]
+unsafe fn __system_property_get(_name: *const c_char, value: *mut c_char) -> i32 {
     *value = '0' as c_char;
     return 1;
 }
 
-use libc::puts;
 
-unsafe extern "C" fn dlopen_test(_name: *const c_char) -> i32 {
-    println!("Will crash !");
-    puts(_name);
-    return 0;
-}
+#[cfg(target_family = "windows")]
+use posix_windows::*;
 
-static mut HELLO: [u8; 32] = [0; 32];
-
-unsafe extern "C" fn malloc_hk() -> *mut () {
-    println!("plzase");
-    HELLO.as_mut_ptr() as *mut ()
-}
-
-#[cfg(target_family = "unix")]
 impl LoaderHelpers {
     pub fn setup_hooks() {
         let mut hooks = HashMap::new();
@@ -338,35 +339,6 @@ impl LoaderHelpers {
         hooks.insert("chmod".to_owned(), chmod as usize);
         hooks.insert("__system_property_get".to_owned(), __system_property_get as usize);
         hooks.insert("__errno".to_owned(), __errno_location as usize);
-        hooks.insert("close".to_owned(), close as usize);
-        hooks.insert("free".to_owned(), free as usize);
-        hooks.insert("fstat".to_owned(), fstat as usize);
-        hooks.insert("ftruncate".to_owned(), ftruncate as usize);
-        hooks.insert("gettimeofday".to_owned(), gettimeofday as usize);
-        hooks.insert("lstat".to_owned(), lstat as usize);
-        hooks.insert("malloc".to_owned(), malloc as usize);
-        hooks.insert("mkdir".to_owned(), mkdir as usize);
-        hooks.insert("open".to_owned(), open as usize);
-        hooks.insert("read".to_owned(), read as usize);
-        hooks.insert("strncpy".to_owned(), strncpy as usize);
-        hooks.insert("umask".to_owned(), umask as usize);
-        hooks.insert("write".to_owned(), write as usize);
-
-        hook_manager::add_hooks(hooks);
-    }
-}
-
-#[cfg(target_family = "windows")]
-use posix_windows::*;
-
-#[cfg(target_family = "windows")]
-impl LoaderHelpers {
-    pub fn setup_hooks() {
-        println!("format !");
-        let mut hooks = HashMap::new();
-        hooks.insert("dlopen".to_owned(), dlopen_test as usize);
-        hooks.insert("arc4random".to_owned(), arc4random as usize);
-        hooks.insert("chmod".to_owned(), chmod as usize);
         hooks.insert("close".to_owned(), close as usize);
         hooks.insert("free".to_owned(), free as usize);
         hooks.insert("fstat".to_owned(), fstat as usize);
@@ -394,7 +366,7 @@ enum ADIStoreSericesCoreErr {
 
 impl std::fmt::Display for ADIStoreSericesCoreErr {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -410,7 +382,8 @@ mod tests {
 
     #[test]
     fn fetch_anisette_ssc() -> Result<()> {
-        let mut provider = ADIProxyAnisetteProvider::new(StoreServicesCoreADIProxy::new(&PathBuf::new().join("anisette_test"))?)?;
+        let proxy= StoreServicesCoreADIProxy::new(&PathBuf::new().join("anisette_test"))?;
+        let mut provider = ADIProxyAnisetteProvider::new(proxy)?;
         println!("SSC headers: {:?}", (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?);
         Ok(())
     }
