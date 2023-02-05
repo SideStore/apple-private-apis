@@ -8,7 +8,6 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use plist::Dictionary;
-use sha2::{Digest, Sha256};
 use crate::adi_proxy::ProvisioningError::InvalidResponse;
 
 #[derive(Debug)]

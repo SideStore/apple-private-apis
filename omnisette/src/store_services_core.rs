@@ -300,20 +300,10 @@ use libc::{chmod, close, free, fstat, ftruncate, gettimeofday, lstat, malloc, mk
 
 static mut ERRNO: i32 = 0;
 
-#[cfg(target_family = "windows")]
-extern "C" { fn _errno() -> *mut i32; }
-
 #[allow(unreachable_code)]
 #[sysv64]
 unsafe fn __errno_location() -> *mut i32 {
-    #[cfg(target_family = "windows")]
-    {
-        println!("errno: Windows specific implementation called!");
-        return _errno();
-    }
     ERRNO = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
-
-    println!("errknown: {}", ERRNO);
     &mut ERRNO
 }
 
