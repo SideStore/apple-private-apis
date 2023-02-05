@@ -17,7 +17,7 @@ mod aos_kit;
 mod remote_anisette;
 
 #[allow(dead_code)]
-struct AnisetteHeaders;
+pub struct AnisetteHeaders;
 
 #[derive(Debug)]
 enum AnisetteMetaError {
@@ -32,7 +32,7 @@ impl std::fmt::Display for AnisetteMetaError {
 
 pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
-struct AnisetteConfiguration {
+pub struct AnisetteConfiguration {
     anisette_url: String,
     configuration_path: PathBuf,
 }
@@ -78,9 +78,8 @@ impl AnisetteHeaders {
             if let Ok(mut ssc_adi_proxy) = store_services_core::StoreServicesCoreADIProxy::new(
                 configuration.configuration_path(),
             ) {
-                let _ = ssc_adi_proxy.set_provisioning_path(
-                    configuration.configuration_path().to_str().unwrap(),
-                );
+                let _ = ssc_adi_proxy
+                    .set_provisioning_path(configuration.configuration_path().to_str().unwrap());
                 return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy)?));
             }
         }

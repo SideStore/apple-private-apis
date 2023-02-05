@@ -43,12 +43,10 @@ impl ADIError {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 trait ToPlist {
     fn plist(self) -> Result<plist::Dictionary>;
 }
 
-#[cfg(not(target_os = "macos"))]
 impl ToPlist for reqwest::blocking::Response {
     fn plist(self) -> Result<plist::Dictionary> {
         if let Ok(property_list) = plist::Value::from_reader_xml(&*self.bytes()?) {
@@ -100,7 +98,7 @@ pub trait ADIProxy {
     fn request_otp(&self, ds_id: i64) -> Result<RequestOTPData, ADIError>;
 
     fn set_local_user_uuid(&mut self, local_user_uuid: String);
-    fn set_device_identifier(&mut self, device_identifier: String) -> Result<()> ;
+    fn set_device_identifier(&mut self, device_identifier: String) -> Result<()>;
 
     fn get_local_user_uuid(&self) -> String;
     fn get_device_identifier(&self) -> String;
@@ -260,10 +258,8 @@ impl dyn ADIProxy {
 
         let response = response.get_response()?;
 
-        let ptm =
-            base64_engine.decode(response.get("ptm").unwrap().as_string().unwrap())?;
-        let tk =
-            base64_engine.decode(response.get("tk").unwrap().as_string().unwrap())?;
+        let ptm = base64_engine.decode(response.get("ptm").unwrap().as_string().unwrap())?;
+        let tk = base64_engine.decode(response.get("tk").unwrap().as_string().unwrap())?;
 
         self.end_provisioning(first_step.session, ptm.as_slice(), tk.as_slice())?;
 
@@ -278,6 +274,7 @@ pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
 // arbitrary key
 const ADI_KEY: &str = "The most secure key is this one. Not only because it is open-source, but also because I said it, and that it is real. C'est réel en fait. ";
 
+#[cfg(not(target_os = "macos"))]
 impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
     pub fn new(mut adi_proxy: ProxyType) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
         let mut identifier = IdBuilder::new(Encryption::SHA1);

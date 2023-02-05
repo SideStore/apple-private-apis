@@ -8,17 +8,15 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 pub struct AOSKitAnisetteProvider<'lt> {
-    aos_kit: Library,
-    auth_kit: Library,
     aos_utilities: &'lt Class,
     ak_device: &'lt Class,
 }
 
 impl<'lt> AOSKitAnisetteProvider<'lt> {
     pub fn new() -> Result<AOSKitAnisetteProvider<'lt>> {
+        Library::open("/System/Library/PrivateFrameworks/AOSKit.framework/AOSKit")?;
+        Library::open("/System/Library/PrivateFrameworks/AuthKit.framework/AuthKit")?;
         Ok(AOSKitAnisetteProvider {
-            aos_kit: Library::open("/System/Library/PrivateFrameworks/AOSKit.framework/AOSKit")?,
-            auth_kit: Library::open("/System/Library/PrivateFrameworks/AuthKit.framework/AuthKit")?,
             aos_utilities: Class::get("AOSUtilities").ok_or(AOSKitError::ClassLoadFailed)?,
             ak_device: Class::get("AKDevice").ok_or(AOSKitError::ClassLoadFailed)?,
         })

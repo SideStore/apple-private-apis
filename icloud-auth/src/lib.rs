@@ -5,6 +5,7 @@ pub use client::AppleAccount;
 pub enum Error {
     HttpRequest,
     Parse,
+    ErrorGettingAnisette,
     AuthSrp,
     AuthSrpWithMessage(i64, String),
 }
