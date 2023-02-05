@@ -3,11 +3,6 @@ use std::mem::MaybeUninit;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::path::PathBuf;
 use std::ptr::null;
-use windows_sys::Win32::{
-    Foundation::FILETIME,
-    Storage::FileSystem::*,
-    System::SystemInformation::GetSystemTimeAsFileTime
-};
 use android_loader::sysv64;
 use libc::{O_CREAT, O_RDONLY, O_RDWR, O_WRONLY};
 
