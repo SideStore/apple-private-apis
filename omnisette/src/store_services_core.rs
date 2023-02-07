@@ -7,13 +7,12 @@ use anyhow::Result;
 use crate::adi_proxy::{ADIError, ADIProxy, ConfigurableADIProxy, RequestOTPData, StartProvisioningData, SynchronizeData};
 use std::ffi::{c_char, CString};
 use std::path::PathBuf;
-use android_loader::android_loader::AndroidLoader;
 use android_loader::{hook_manager, sysv64};
 use android_loader::sysv64_type;
 
-pub struct StoreServicesCoreADIProxy {
+pub struct StoreServicesCoreADIProxy<'lt> {
     #[allow(dead_code)]
-    store_services_core: AndroidLibrary,
+    store_services_core: AndroidLibrary<'lt>,
 
     local_user_uuid: String,
     device_identifier: String,
@@ -58,8 +57,8 @@ pub struct StoreServicesCoreADIProxy {
     ) -> i32),
 }
 
-impl StoreServicesCoreADIProxy {
-    pub fn new(library_path: &PathBuf) -> Result<StoreServicesCoreADIProxy> {
+impl StoreServicesCoreADIProxy<'_> {
+    pub fn new<'lt>(library_path: &PathBuf) -> Result<StoreServicesCoreADIProxy<'lt>> {
         // Should be safe is the library is correct.
         unsafe {
             LoaderHelpers::setup_hooks();
@@ -85,7 +84,9 @@ impl StoreServicesCoreADIProxy {
                 .join("lib")
                 .join(ARCH);
 
-            let store_services_core = AndroidLoader::load_library(native_library_path.join("libstoreservicescore.so").to_str().ok_or(ADIStoreSericesCoreErr::Misc)?)?;
+            let path = native_library_path.join("libstoreservicescore.so");
+            let path = path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?;
+            let store_services_core = AndroidLibrary::load(path)?;
 
             let adi_load_library_with_path: sysv64_type!(fn(path: *const u8) -> i32)
                 = std::mem::transmute(store_services_core.get_symbol("kq56gsgHG6").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?);
@@ -131,7 +132,7 @@ impl StoreServicesCoreADIProxy {
     }
 }
 
-impl ADIProxy for StoreServicesCoreADIProxy {
+impl ADIProxy for StoreServicesCoreADIProxy<'_> {
     fn erase_provisioning(&mut self, ds_id: i64) -> Result<(), ADIError> {
         match (self.adi_provisioning_erase)(ds_id) {
             0 => Ok(()),
@@ -273,7 +274,7 @@ impl ADIProxy for StoreServicesCoreADIProxy {
     }
 }
 
-impl ConfigurableADIProxy for StoreServicesCoreADIProxy {
+impl ConfigurableADIProxy for StoreServicesCoreADIProxy<'_> {
     fn set_identifier(&mut self, identifier: &str) -> Result<(), ADIError> {
         match (self.adi_set_android_id)(identifier.as_ptr(), identifier.len() as u32) {
             0 => Ok(()),
