@@ -9,7 +9,7 @@ use libc::{O_CREAT, O_RDONLY, O_RDWR, O_WRONLY};
 #[link(name = "ucrt")]
 extern "C" {
     fn _errno() -> *mut libc::c_int;
-    fn timespec_get(
+    fn _timespec64_get(
         __ts: *mut libc::timespec,
         __base: libc::c_int
     ) -> libc::c_int;
@@ -73,7 +73,7 @@ pub unsafe fn gettimeofday(timeval: *mut PosixTimeval, _tz: *mut PosixTimezone) 
     println!("gettimeofday: Windows specific implementation called!");
     let mut ts = MaybeUninit::<libc::timespec>::zeroed();
 
-    let ret = timespec_get(ts.as_mut_ptr(), 1);
+    let ret = _timespec64_get(ts.as_mut_ptr(), 1);
     let ts = ts.assume_init();
 
     *timeval = PosixTimeval {
