@@ -1,8 +1,5 @@
-use std::ffi::{CStr, CString, OsString};
+use std::ffi::{CStr, CString};
 use std::mem::MaybeUninit;
-use std::os::windows::ffi::{OsStrExt, OsStringExt};
-use std::path::PathBuf;
-use std::ptr::null;
 use android_loader::sysv64;
 use libc::{O_CREAT, O_RDONLY, O_RDWR, O_WRONLY};
 
@@ -49,7 +46,6 @@ pub struct PosixTimezone {
     tz_dsttime: u32 /* microseconds */
 }
 
-static MODERNITYSECONDS: u64 = 11644473600;
 static HECTONANOSECONDS: u64 = 10000000;
 
 impl PosixTimespec {
@@ -57,13 +53,6 @@ impl PosixTimespec {
         PosixTimespec {
             tv_sec: (time / HECTONANOSECONDS) as i64,
             tv_nsec: (time % HECTONANOSECONDS) as i64 * 100
-        }
-    }
-
-    pub fn to_timeval(&self) -> PosixTimeval {
-        PosixTimeval {
-            tv_sec: self.tv_sec as u64,
-            tv_usec: (self.tv_nsec / 1000) as u64,
         }
     }
 }
