@@ -11,7 +11,6 @@ use std::path::PathBuf;
 use plist::Dictionary;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
-use sha2::digest::FixedOutput;
 use crate::adi_proxy::ProvisioningError::InvalidResponse;
 
 #[derive(Debug)]
@@ -66,7 +65,7 @@ impl ToPlist for reqwest::blocking::Response {
 
 impl Display for ADIError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -274,11 +273,8 @@ pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
     adi_proxy: ProxyType,
 }
 
-// arbitrary key
-const ADI_KEY: &str = "The most secure key is this one. Not only because it is open-source, but also because I said it, and that it is real. C'est réel en fait. ";
-
 impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
-    pub fn new(mut adi_proxy: ProxyType, mut configuration_path: PathBuf) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
+    pub fn new(mut adi_proxy: ProxyType, configuration_path: PathBuf) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
         let identifier_file_path = configuration_path.join("identifier");
         let mut identifier_file = std::fs::OpenOptions::new().create(true).read(true).write(true).open(identifier_file_path)?;
         const IDENTIFIER_LENGTH: usize = 16;
@@ -291,7 +287,7 @@ impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
         }
 
         let mut local_user_uuid_hasher = Sha256::new();
-        local_user_uuid_hasher.update(&identifier);
+        local_user_uuid_hasher.update(identifier);
 
         adi_proxy.set_device_identifier(uuid::Uuid::from_bytes(identifier).to_string().to_uppercase())?; // UUID, uppercase
         adi_proxy.set_local_user_uuid(hex::encode(local_user_uuid_hasher.finalize()).to_uppercase()); // 64 uppercase character hex

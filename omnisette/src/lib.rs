@@ -4,21 +4,22 @@ use anyhow::Result;
 use std::fmt::Formatter;
 use std::path::PathBuf;
 
-mod adi_proxy;
-mod anisette_headers_provider;
+pub mod adi_proxy;
+pub mod anisette_headers_provider;
 
 #[cfg(not(target_os = "macos"))]
-mod store_services_core;
+pub mod store_services_core;
 
 #[cfg(target_os = "macos")]
-mod aos_kit;
+pub mod aos_kit;
 
 #[cfg(feature = "remote-anisette")]
-mod remote_anisette;
+pub mod remote_anisette;
 
 #[allow(dead_code)]
 pub struct AnisetteHeaders;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum AnisetteMetaError {
     UnsupportedDevice,
@@ -27,7 +28,7 @@ enum AnisetteMetaError {
 
 impl std::fmt::Display for AnisetteMetaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AnisetteMetaError::{:?}", self)
+        write!(f, "AnisetteMetaError::{self:?}")
     }
 }
 
@@ -38,6 +39,12 @@ pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 pub struct AnisetteConfiguration {
     anisette_url: String,
     configuration_path: PathBuf,
+}
+
+impl Default for AnisetteConfiguration {
+    fn default() -> Self {
+        AnisetteConfiguration::new()
+    }
 }
 
 impl AnisetteConfiguration {
