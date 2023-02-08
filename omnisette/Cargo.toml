@@ -17,7 +17,7 @@ sha2 = { version = "0.10.6" }
 uuid = { version = "1.3.0", features = [ "v4", "fast-rng", "macro-diagnostics" ] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
-android-loader = { path = "../../android-loader2" } # { git = "https://github.com/Dadoum/android-loader" }
+android-loader = { git = "https://github.com/Dadoum/android-loader" }
 libc = "0.2.139"
 rand = "0.8.4"
 
