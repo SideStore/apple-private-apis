@@ -65,6 +65,26 @@ pub struct ChallengeRequest {
     request: ChallengeRequestBody,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthTokenRequestBody {
+    app: Vec<String>,
+    c: plist::Value,
+    cpd: plist::Dictionary,
+    #[serde(rename = "o")]
+    operation: String,
+    t: String,
+    u: String,
+    checksum: plist::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthTokenRequest {
+    #[serde(rename = "Header")]
+    header: RequestHeader,
+    #[serde(rename = "Request")]
+    request: AuthTokenRequestBody,
+}
+
 #[derive(Clone)]
 pub struct AppleAccount {
     //TODO: move this to omnisette
@@ -73,6 +93,13 @@ pub struct AppleAccount {
     //mutable spd
     pub spd: Option<plist::Dictionary>,
     client: Client,
+}
+
+#[derive(Clone)]
+pub struct AppToken {
+    pub app_tokens: plist::Dictionary,
+    pub auth_token: String,
+    pub app: String,
 }
 //Just make it return a custom enum, with LoggedIn(account: AppleAccount) or Needs2FA(FinishLoginDel: fn(i32) -> TFAResponse)
 pub enum LoginResponse {
@@ -95,6 +122,17 @@ pub enum LoginResponse {
 //         self.account.verify_2fa(&tfa_code).unwrap()
 //     }
 // }
+
+fn parse_response(res: Result<Response, reqwest::Error>) -> plist::Dictionary {
+    let res = res.unwrap().text().unwrap();
+    println!("{:?}", res);
+    let res: plist::Dictionary = plist::from_bytes(res.as_bytes()).unwrap();
+    let res: plist::Value = res.get("Response").unwrap().to_owned();
+    match res {
+        plist::Value::Dictionary(dict) => dict,
+        _ => panic!("Invalid response"),
+    }
+}
 
 impl AppleAccount {
     pub fn new() -> Self {
@@ -123,6 +161,88 @@ impl AppleAccount {
     ) -> Result<AppleAccount, Error> {
         let anisette = AnisetteData::new();
         AppleAccount::login_with_anisette(appleid_closure, tfa_closure, anisette.unwrap())
+    }
+
+    pub fn get_app_token(&self, app_name: &str) -> Result<AppToken, Error> {
+        let spd = self.spd.as_ref().unwrap();
+        // println!("spd: {:#?}", spd);
+        let dsid = spd.get("adsid").unwrap().as_string().unwrap();
+        let auth_token = spd.get("GsIdmsToken").unwrap().as_string().unwrap();
+
+        let sk = spd.get("sk").unwrap().as_data().unwrap();
+        let c = spd.get("c").unwrap().as_data().unwrap();
+        println!("adsid: {}", dsid);
+        println!("GsIdmsToken: {}", auth_token);
+        // println!("spd: {:#?}", spd);
+        println!("sk: {:#?}", sk);
+        println!("c: {:#?}", c);
+
+        let checksum = Self::create_checksum(&sk.to_vec(), dsid, app_name);
+
+        let mut gsa_headers = HeaderMap::new();
+        gsa_headers.insert(
+            "Content-Type",
+            HeaderValue::from_str("text/x-xml-plist").unwrap(),
+        );
+        gsa_headers.insert("Accept", HeaderValue::from_str("*/*").unwrap());
+        gsa_headers.insert(
+            "User-Agent",
+            HeaderValue::from_str("akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0").unwrap(),
+        );
+        gsa_headers.insert(
+            "X-MMe-Client-Info",
+            HeaderValue::from_str(&self.anisette.get_header("x-mme-client-info")?).unwrap(),
+        );
+
+        let header = RequestHeader {
+            version: "1.0.1".to_string(),
+        };
+        let body = AuthTokenRequestBody {
+            cpd: self.anisette.to_plist(true, false, false),
+            app: vec![app_name.to_string()],
+            c: plist::Value::Data(c.to_vec()),
+            operation: "apptokens".to_owned(),
+            t: auth_token.to_string(),
+            u: dsid.to_string(),
+            checksum: plist::Value::Data(checksum),
+        };
+
+        let packet = AuthTokenRequest {
+            header: header.clone(),
+            request: body,
+        };
+
+        let mut buffer = Vec::new();
+        plist::to_writer_xml(&mut buffer, &packet).unwrap();
+        let buffer = String::from_utf8(buffer).unwrap();
+
+        println!("{:?}", gsa_headers.clone());
+        println!("{:?}", buffer);
+
+        let res = self
+            .client
+            .post(GSA_ENDPOINT)
+            .headers(gsa_headers.clone())
+            .body(buffer)
+            .send();
+        let res = parse_response(res);
+        let err_check = Self::check_error(&res);
+        if err_check.is_err() {
+            return Err(err_check.err().unwrap());
+        }
+        println!("{:?}", res);
+        todo!()
+    }
+
+    fn create_checksum(session_key: &Vec<u8>, dsid: &str, app_name: &str) -> Vec<u8> {
+        Hmac::<Sha256>::new_from_slice(&session_key)
+            .unwrap()
+            .chain_update("apptokens".as_bytes())
+            .chain_update(dsid.as_bytes())
+            .chain_update(app_name.as_bytes())
+            .finalize()
+            .into_bytes()
+            .to_vec()
     }
 
     /// # Arguments
@@ -173,17 +293,6 @@ impl AppleAccount {
         username: String,
         password: String,
     ) -> Result<LoginResponse, Error> {
-        let parse_response = |res: Result<Response, reqwest::Error>| {
-            let res = res.unwrap().text().unwrap();
-            println!("{:?}", res);
-            let res: plist::Dictionary = plist::from_bytes(res.as_bytes()).unwrap();
-            let res: plist::Value = res.get("Response").unwrap().to_owned();
-            match res {
-                plist::Value::Dictionary(dict) => dict,
-                _ => panic!("Invalid response"),
-            }
-        };
-
         let srp_client = SrpClient::<Sha256>::new(&G_2048);
         let a: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
         let a_pub = srp_client.compute_public_ephemeral(&a);
