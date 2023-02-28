@@ -106,6 +106,115 @@ pub struct RequestOTPData {
     pub mid: Vec<u8>,
 }
 
+// ADIProxy helper macros to reduce duplicate code between async and sync
+// we unfortunately can't use a helper struct + impl because of issues passing a dyn ADIProxy to the methods
+
+macro_rules! ADIProxy_make_http_client {
+    ($adi_proxy: expr) => {
+        {
+            let mut headers = HeaderMap::new();
+            headers.insert("Content-Type", HeaderValue::from_str("text/x-xml-plist")?);
+
+            headers.insert(
+                "X-Mme-Client-Info",
+                HeaderValue::from_str(CLIENT_INFO_HEADER)?,
+            );
+            headers.insert(
+                "X-Mme-Device-Id",
+                HeaderValue::from_str($adi_proxy.get_device_identifier().as_str())?,
+            );
+            headers.insert(
+                "X-Apple-I-MD-LU",
+                HeaderValue::from_str($adi_proxy.get_local_user_uuid().as_str())?,
+            );
+            headers.insert(
+                "X-Apple-I-SRL-NO",
+                HeaderValue::from_str($adi_proxy.get_serial_number().as_str())?,
+            );
+
+            println!("Headers sent: {headers:?}");
+
+            let http_client = ClientBuilder::new()
+                .http1_title_case_headers()
+                .danger_accept_invalid_certs(true) // TODO: pin the apple certificate
+                .user_agent(AKD_USER_AGENT)
+                .default_headers(headers)
+                .build()?;
+
+            anyhow::Ok::<Client>(http_client)
+        }
+    };
+}
+
+macro_rules! ADIProxy_get_urls_and_create_sp_request {
+    ($urls: expr) => {
+        {
+            let start_provisioning_url = $urls
+                .get("midStartProvisioning")
+                .unwrap()
+                .as_string()
+                .unwrap();
+            let finish_provisioning_url = $urls
+                .get("midFinishProvisioning")
+                .unwrap()
+                .as_string()
+                .unwrap();
+
+            let mut body = Dictionary::new();
+            body.insert("Header".to_string(), Value::Dictionary(Dictionary::new()));
+            body.insert("Request".to_string(), Value::Dictionary(Dictionary::new()));
+
+            let mut sp_request = Vec::new();
+            Value::Dictionary(body).to_writer_xml(&mut sp_request)?;
+
+            anyhow::Ok::<(&str, &str, Vec<u8>)>((start_provisioning_url, finish_provisioning_url, sp_request))
+        }
+    };
+}
+
+macro_rules! ADIProxy_create_fp_request {
+    ($adi_proxy: expr, $response: expr) => {
+        {
+            let spim = $response
+                .get("spim")
+                .unwrap()
+                .as_string()
+                .unwrap()
+                .to_owned();
+
+            let spim = base64_engine.decode(spim)?;
+            let first_step = $adi_proxy.start_provisioning(DS_ID, spim.as_slice())?;
+
+            let mut body = Dictionary::new();
+            let mut request = Dictionary::new();
+            request.insert(
+                "cpim".to_owned(),
+                Value::String(base64_engine.encode(first_step.cpim.clone())),
+            );
+            body.insert("Header".to_owned(), Value::Dictionary(Dictionary::new()));
+            body.insert("Request".to_owned(), Value::Dictionary(request));
+
+            let mut fp_request = Vec::new();
+            Value::Dictionary(body).to_writer_xml(&mut fp_request)?;
+
+            anyhow::Ok::<(Vec<u8>, StartProvisioningData)>((fp_request, first_step))
+        }
+    };
+}
+
+macro_rules! ADIProxy_decode_and_end_provisioning {
+    ($adi_proxy: expr, $response: expr, $first_step: expr) => {
+        {
+            let ptm = base64_engine.decode($response.get("ptm").unwrap().as_string().unwrap())?;
+            let tk = base64_engine.decode($response.get("tk").unwrap().as_string().unwrap())?;
+
+            $adi_proxy.end_provisioning($first_step.session, ptm.as_slice(), tk.as_slice())?;
+
+            anyhow::Ok(())
+        }
+    };
+}
+
 #[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 pub trait ADIProxy {
     #[cfg(feature = "async")]
@@ -237,115 +346,6 @@ impl AppleRequestResult for Dictionary {
             Err(InvalidResponse.into())
         }
     }
-}
-
-// ADIProxy helper macros to reduce duplicate code between async and sync
-// we unfortunately can't use a helper struct + impl because of issues passing a dyn ADIProxy to the methods
-
-macro_rules! ADIProxy_make_http_client {
-    ($adi_proxy: expr) => {
-        {
-            let mut headers = HeaderMap::new();
-            headers.insert("Content-Type", HeaderValue::from_str("text/x-xml-plist")?);
-
-            headers.insert(
-                "X-Mme-Client-Info",
-                HeaderValue::from_str(CLIENT_INFO_HEADER)?,
-            );
-            headers.insert(
-                "X-Mme-Device-Id",
-                HeaderValue::from_str($adi_proxy.get_device_identifier().as_str())?,
-            );
-            headers.insert(
-                "X-Apple-I-MD-LU",
-                HeaderValue::from_str($adi_proxy.get_local_user_uuid().as_str())?,
-            );
-            headers.insert(
-                "X-Apple-I-SRL-NO",
-                HeaderValue::from_str($adi_proxy.get_serial_number().as_str())?,
-            );
-
-            println!("Headers sent: {headers:?}");
-
-            let http_client = ClientBuilder::new()
-                .http1_title_case_headers()
-                .danger_accept_invalid_certs(true) // TODO: pin the apple certificate
-                .user_agent(AKD_USER_AGENT)
-                .default_headers(headers)
-                .build()?;
-
-            anyhow::Ok::<Client>(http_client)
-        }
-    };
-}
-
-macro_rules! ADIProxy_get_urls_and_create_sp_request {
-    ($urls: expr) => {
-        {
-            let start_provisioning_url = $urls
-                .get("midStartProvisioning")
-                .unwrap()
-                .as_string()
-                .unwrap();
-            let finish_provisioning_url = $urls
-                .get("midFinishProvisioning")
-                .unwrap()
-                .as_string()
-                .unwrap();
-
-            let mut body = Dictionary::new();
-            body.insert("Header".to_string(), Value::Dictionary(Dictionary::new()));
-            body.insert("Request".to_string(), Value::Dictionary(Dictionary::new()));
-
-            let mut sp_request = Vec::new();
-            Value::Dictionary(body).to_writer_xml(&mut sp_request)?;
-
-            anyhow::Ok::<(&str, &str, Vec<u8>)>((start_provisioning_url, finish_provisioning_url, sp_request))
-        }
-    };
-}
-
-macro_rules! ADIProxy_create_fp_request {
-    ($adi_proxy: expr, $response: expr) => {
-        {
-            let spim = $response
-                .get("spim")
-                .unwrap()
-                .as_string()
-                .unwrap()
-                .to_owned();
-
-            let spim = base64_engine.decode(spim)?;
-            let first_step = $adi_proxy.start_provisioning(DS_ID, spim.as_slice())?;
-
-            let mut body = Dictionary::new();
-            let mut request = Dictionary::new();
-            request.insert(
-                "cpim".to_owned(),
-                Value::String(base64_engine.encode(first_step.cpim.clone())),
-            );
-            body.insert("Header".to_owned(), Value::Dictionary(Dictionary::new()));
-            body.insert("Request".to_owned(), Value::Dictionary(request));
-
-            let mut fp_request = Vec::new();
-            Value::Dictionary(body).to_writer_xml(&mut fp_request)?;
-
-            anyhow::Ok::<(Vec<u8>, StartProvisioningData)>((fp_request, first_step))
-        }
-    };
-}
-
-macro_rules! ADIProxy_decode_and_end_provisioning {
-    ($adi_proxy: expr, $response: expr, $first_step: expr) => {
-        {
-            let ptm = base64_engine.decode($response.get("ptm").unwrap().as_string().unwrap())?;
-            let tk = base64_engine.decode($response.get("tk").unwrap().as_string().unwrap())?;
-
-            $adi_proxy.end_provisioning($first_step.session, ptm.as_slice(), tk.as_slice())?;
-
-            anyhow::Ok(())
-        }
-    };
 }
 
 pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
