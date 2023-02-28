@@ -374,8 +374,8 @@ impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
         Ok(ADIProxyAnisetteProvider { adi_proxy })
     }
 
-    pub fn adi_proxy(&mut self) -> ProxyType {
-        self.adi_proxy
+    pub fn adi_proxy(&mut self) -> &ProxyType {
+        &self.adi_proxy
     }
 
     fn _get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
