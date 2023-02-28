@@ -115,7 +115,7 @@ impl AnisetteHeaders {
         let mut ssc_adi_proxy = store_services_core::StoreServicesCoreADIProxy::new(configuration.configuration_path())?;
         let config_path = configuration.configuration_path();
         ssc_adi_proxy.set_provisioning_path(config_path.to_str().ok_or(AnisetteMetaError::InvalidArgument("configuration.configuration_path".to_string()))?)?;
-        Ok(Box::new(ADIProxyAnisetteProvider::with_identifier(ssc_adi_proxy, identifier)))
+        Ok(Box::new(ADIProxyAnisetteProvider::with_identifier(ssc_adi_proxy, identifier)?))
     }
 }
 
