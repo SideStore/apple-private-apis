@@ -22,12 +22,11 @@ pub mod aos_kit;
 #[cfg(feature = "remote-anisette")]
 pub mod remote_anisette;
 
-#[allow(dead_code)]
 pub struct AnisetteHeaders;
 
-#[allow(dead_code)]
 #[derive(Debug)]
 enum AnisetteMetaError {
+    #[allow(dead_code)]
     UnsupportedDevice,
     InvalidArgument(String)
 }

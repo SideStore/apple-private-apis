@@ -291,7 +291,6 @@ impl ConfigurableADIProxy for StoreServicesCoreADIProxy<'_> {
     }
 }
 
-#[allow(dead_code)]
 struct LoaderHelpers;
 
 use rand::Rng;
@@ -301,7 +300,6 @@ use libc::{chmod, close, free, fstat, ftruncate, gettimeofday, lstat, malloc, mk
 
 static mut ERRNO: i32 = 0;
 
-#[allow(unreachable_code)]
 #[sysv64]
 unsafe fn __errno_location() -> *mut i32 {
     ERRNO = std::io::Error::last_os_error().raw_os_error().unwrap_or(0);
