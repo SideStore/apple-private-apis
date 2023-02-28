@@ -354,6 +354,11 @@ pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
 }
 
 impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
+    /// If you use this method, you are expected to set the identifier yourself.
+    pub fn without_identifier(mut adi_proxy: ProxyType) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
+        Ok(ADIProxyAnisetteProvider { adi_proxy })
+    }
+
     pub fn new(mut adi_proxy: ProxyType, configuration_path: PathBuf) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
         let identifier_file_path = configuration_path.join("identifier");
         let mut identifier_file = std::fs::OpenOptions::new().create(true).read(true).write(true).open(identifier_file_path)?;
@@ -374,8 +379,8 @@ impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
         Ok(ADIProxyAnisetteProvider { adi_proxy })
     }
 
-    pub fn adi_proxy(&mut self) -> &ProxyType {
-        &self.adi_proxy
+    pub fn adi_proxy(&mut self) -> &mut ProxyType {
+        &mut self.adi_proxy
     }
 
     fn _get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
