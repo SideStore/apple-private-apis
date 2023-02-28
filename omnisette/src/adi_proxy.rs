@@ -355,7 +355,7 @@ pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
 
 impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
     /// If you use this method, you are expected to set the identifier yourself.
-    pub fn without_identifier(mut adi_proxy: ProxyType) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
+    pub fn without_identifier(adi_proxy: ProxyType) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
         Ok(ADIProxyAnisetteProvider { adi_proxy })
     }
 
