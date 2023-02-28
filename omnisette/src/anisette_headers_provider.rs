@@ -7,6 +7,11 @@ pub trait AnisetteHeadersProvider {
     async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>>;
     #[cfg(not(feature = "async"))]
     fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>>;
+
+    #[cfg(feature = "async")]
+    async fn get_authentication_headers(&mut self) -> Result<HashMap<String, String>>;
+    #[cfg(not(feature = "async"))]
+    fn get_authentication_headers(&mut self) -> Result<HashMap<String, String>>;
 }
 
 impl dyn AnisetteHeadersProvider {
@@ -24,7 +29,6 @@ impl dyn AnisetteHeadersProvider {
         let headers = self.get_anisette_headers().await?;
         Ok(self.normalize_headers(headers))
     }
-
     #[cfg(not(feature = "async"))]
     pub fn get_authentication_headers(&mut self) -> Result<HashMap<String, String>> {
         let headers = self.get_anisette_headers()?;
