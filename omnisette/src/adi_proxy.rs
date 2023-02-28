@@ -346,7 +346,7 @@ pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
 }
 
 impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
-    pub fn new(mut adi_proxy: ProxyType, configuration_path: PathBuf) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
+    pub fn new(adi_proxy: ProxyType, configuration_path: PathBuf) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
         let identifier_file_path = configuration_path.join("identifier");
         let mut identifier_file = std::fs::OpenOptions::new().create(true).read(true).write(true).open(identifier_file_path)?;
         let mut identifier = [0u8; IDENTIFIER_LENGTH];

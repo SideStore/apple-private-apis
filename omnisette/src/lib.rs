@@ -104,14 +104,14 @@ impl AnisetteHeaders {
         bail!(AnisetteMetaError::UnsupportedDevice)
     }
 
-    pub fn get_ssc_anisette_headers_provider<'lt>(configuration: AnisetteConfiguration) -> Result<Box<dyn AnisetteHeadersProvider>> {
+    pub fn get_ssc_anisette_headers_provider(configuration: AnisetteConfiguration) -> Result<Box<dyn AnisetteHeadersProvider>> {
         let mut ssc_adi_proxy = store_services_core::StoreServicesCoreADIProxy::new(configuration.configuration_path())?;
         let config_path = configuration.configuration_path();
         ssc_adi_proxy.set_provisioning_path(config_path.to_str().ok_or(AnisetteMetaError::InvalidArgument("configuration.configuration_path".to_string()))?)?;
         Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy, config_path.to_path_buf())?))
     }
 
-    pub fn get_ssc_anisette_headers_provider_with_identifier<'lt>(configuration: AnisetteConfiguration, identifier: [u8; IDENTIFIER_LENGTH]) -> Result<Box<dyn AnisetteHeadersProvider>> {
+    pub fn get_ssc_anisette_headers_provider_with_identifier(configuration: AnisetteConfiguration, identifier: [u8; IDENTIFIER_LENGTH]) -> Result<Box<dyn AnisetteHeadersProvider>> {
         let mut ssc_adi_proxy = store_services_core::StoreServicesCoreADIProxy::new(configuration.configuration_path())?;
         let config_path = configuration.configuration_path();
         ssc_adi_proxy.set_provisioning_path(config_path.to_str().ok_or(AnisetteMetaError::InvalidArgument("configuration.configuration_path".to_string()))?)?;
