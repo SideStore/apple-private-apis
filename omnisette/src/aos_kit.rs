@@ -21,10 +21,8 @@ impl<'lt> AOSKitAnisetteProvider<'lt> {
             ak_device: Class::get("AKDevice").ok_or(AOSKitError::ClassLoadFailed)?,
         })
     }
-}
 
-impl<'lt> AnisetteHeadersProvider for AOSKitAnisetteProvider<'lt> {
-    fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+    fn _get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
         let mut headers_map = HashMap::new();
 
         let headers: *const NSObject = unsafe {
@@ -85,6 +83,19 @@ impl<'lt> AnisetteHeadersProvider for AOSKitAnisetteProvider<'lt> {
     }
 }
 
+#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
+impl<'lt> AnisetteHeadersProvider for AOSKitAnisetteProvider<'lt> {
+    #[cfg(feature = "async")]
+    async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+        self._get_anisette_headers()
+    }
+
+    #[cfg(not(feature = "async"))]
+    fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+        self._get_anisette_headers()
+    }
+}
+
 #[derive(Debug)]
 enum AOSKitError {
     ClassLoadFailed,
@@ -98,7 +109,7 @@ impl Display for AOSKitError {
 
 impl Error for AOSKitError {}
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "async")))]
 mod tests {
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
     use crate::aos_kit::AOSKitAnisetteProvider;

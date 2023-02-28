@@ -12,13 +12,20 @@ impl RemoteAnisetteProvider {
     }
 }
 
+#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 impl AnisetteHeadersProvider for RemoteAnisetteProvider {
+    #[cfg(feature = "async")]
+    async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+        Ok(reqwest::get(&self.url).await?.json().await?)
+    }
+
+    #[cfg(not(feature = "async"))]
     fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
         Ok(reqwest::blocking::get(&self.url)?.json()?)
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "async")))]
 mod tests {
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
     use crate::remote_anisette::RemoteAnisetteProvider;

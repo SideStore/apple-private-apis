@@ -1,17 +1,21 @@
+use crate::adi_proxy::ProvisioningError::InvalidResponse;
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 use anyhow::Result;
 use base64::Engine;
-use reqwest::blocking::{Client, ClientBuilder};
+use base64::engine::general_purpose::STANDARD as base64_engine;
+use plist::{Dictionary, Value};
+use rand::RngCore;
+#[cfg(feature = "async")]
+use reqwest::{Client, ClientBuilder, Response};
+#[cfg(not(feature = "async"))]
+use reqwest::blocking::{Client, ClientBuilder, Response};
 use reqwest::header::{HeaderMap, HeaderValue};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 use std::io::{Read, Write};
 use std::path::PathBuf;
-use plist::Dictionary;
-use rand::RngCore;
-use sha2::{Digest, Sha256};
-use crate::adi_proxy::ProvisioningError::InvalidResponse;
 
 #[derive(Debug)]
 pub struct ServerError {
@@ -45,14 +49,30 @@ impl ADIError {
     }
 }
 
+#[cfg_attr(feature = "async", async_trait::async_trait)]
 trait ToPlist {
-    fn plist(self) -> Result<plist::Dictionary>;
+    #[cfg(feature = "async")]
+    async fn plist(self) -> Result<Dictionary>;
+    #[cfg(not(feature = "async"))]
+    fn plist(self) -> Result<Dictionary>;
 }
 
-impl ToPlist for reqwest::blocking::Response {
-    fn plist(self) -> Result<plist::Dictionary> {
-        if let Ok(property_list) = plist::Value::from_reader_xml(&*self.bytes()?) {
-
+#[cfg_attr(feature = "async", async_trait::async_trait)]
+impl ToPlist for Response {
+    #[cfg(feature = "async")]
+    async fn plist(self) -> Result<Dictionary> {
+        if let Ok(property_list) = Value::from_reader_xml(&*self.bytes().await?) {
+            Ok(property_list
+                .as_dictionary()
+                .unwrap()
+                .to_owned())
+        } else {
+            Err(ProvisioningError::InvalidResponse.into())
+        }
+    }
+    #[cfg(not(feature = "async"))]
+    fn plist(self) -> Result<Dictionary> {
+        if let Ok(property_list) = Value::from_reader_xml(&*self.bytes()?) {
             Ok(property_list
                 .as_dictionary()
                 .unwrap()
@@ -148,6 +168,35 @@ impl AppleRequestResult for Dictionary {
     }
 }
 
+// we can't have this in impl ADIProxy because we can't borrow &mut self more than once
+fn get_urls_and_create_sp_request(urls: &Dictionary) -> Result<(&str, &str, Vec<u8>)> {
+    let start_provisioning_url = urls
+        .get("midStartProvisioning")
+        .unwrap()
+        .as_string()
+        .unwrap();
+    let finish_provisioning_url = urls
+        .get("midFinishProvisioning")
+        .unwrap()
+        .as_string()
+        .unwrap();
+
+    let mut body = Dictionary::new();
+    body.insert(
+        "Header".to_string(),
+        Value::Dictionary(Dictionary::new()),
+    );
+    body.insert(
+        "Request".to_string(),
+        Value::Dictionary(Dictionary::new()),
+    );
+
+    let mut sp_request = Vec::new();
+    Value::Dictionary(body).to_writer_xml(&mut sp_request)?;
+
+    Ok((start_provisioning_url, finish_provisioning_url, sp_request))
+}
+
 impl dyn ADIProxy {
     fn make_http_client(&self) -> Result<Client> {
         let mut headers = HeaderMap::new();
@@ -174,58 +223,15 @@ impl dyn ADIProxy {
 
         let http_client = ClientBuilder::new()
             .http1_title_case_headers()
-            .danger_accept_invalid_certs(true)
+            .danger_accept_invalid_certs(true) // TODO: pin the apple certificate
             .user_agent(AKD_USER_AGENT)
-            .default_headers(headers) // TODO: pin the apple certificate
+            .default_headers(headers)
             .build()?;
 
         Ok(http_client)
     }
 
-    pub fn provision_device(&mut self) -> Result<()> {
-        let client = self.make_http_client()?;
-        let base64_engine = base64::engine::general_purpose::STANDARD;
-
-        let url_bag_res = client
-            .get("https://gsa.apple.com/grandslam/GsService2/lookup")
-            .send()?
-            .plist()?;
-
-        let urls = url_bag_res.get("urls").unwrap().as_dictionary().unwrap();
-
-        let start_provisioning_url = urls
-            .get("midStartProvisioning")
-            .unwrap()
-            .as_string()
-            .unwrap();
-        let finish_provisioning_url = urls
-            .get("midFinishProvisioning")
-            .unwrap()
-            .as_string()
-            .unwrap();
-
-        let mut body = plist::Dictionary::new();
-        body.insert(
-            "Header".to_string(),
-            plist::Value::Dictionary(plist::Dictionary::new()),
-        );
-        body.insert(
-            "Request".to_string(),
-            plist::Value::Dictionary(plist::Dictionary::new()),
-        );
-
-        let mut sp_request = Vec::new();
-        plist::Value::Dictionary(body).to_writer_xml(&mut sp_request)?;
-
-        println!("First provisioning request...");
-        let response = client
-            .post(start_provisioning_url)
-            .body(sp_request)
-            .send()?
-            .plist()?;
-
-        let response = response.get_response()?;
-
+    fn create_fp_request(&mut self, response: &Dictionary) -> Result<(Vec<u8>, StartProvisioningData)> {
         let spim = response
             .get("spim")
             .unwrap()
@@ -236,20 +242,90 @@ impl dyn ADIProxy {
         let spim = base64_engine.decode(spim)?;
         let first_step = self.start_provisioning(DS_ID, spim.as_slice())?;
 
-        let mut body = plist::Dictionary::new();
-        let mut request = plist::Dictionary::new();
+        let mut body = Dictionary::new();
+        let mut request = Dictionary::new();
         request.insert(
             "cpim".to_owned(),
-            plist::Value::String(base64_engine.encode(first_step.cpim)),
+            Value::String(base64_engine.encode(first_step.cpim.clone())),
         );
         body.insert(
             "Header".to_owned(),
-            plist::Value::Dictionary(plist::Dictionary::new()),
+            Value::Dictionary(Dictionary::new()),
         );
-        body.insert("Request".to_owned(), plist::Value::Dictionary(request));
+        body.insert("Request".to_owned(), Value::Dictionary(request));
 
         let mut fp_request = Vec::new();
-        plist::Value::Dictionary(body).to_writer_xml(&mut fp_request)?;
+        Value::Dictionary(body).to_writer_xml(&mut fp_request)?;
+
+        Ok((fp_request, first_step))
+    }
+
+    fn decode_and_end_provisioning(&mut self, response: &Dictionary, first_step: StartProvisioningData) -> Result<()> {
+        let ptm = base64_engine.decode(response.get("ptm").unwrap().as_string().unwrap())?;
+        let tk = base64_engine.decode(response.get("tk").unwrap().as_string().unwrap())?;
+
+        self.end_provisioning(first_step.session, ptm.as_slice(), tk.as_slice())?;
+
+        Ok(())
+    }
+
+    #[cfg(feature = "async")]
+    pub async fn provision_device(&mut self) -> Result<()> {
+        let client = self.make_http_client()?;
+
+        let url_bag_res = client
+            .get("https://gsa.apple.com/grandslam/GsService2/lookup")
+            .send()
+            .await?
+            .plist()
+            .await?;
+
+        let (start_provisioning_url, finish_provisioning_url, sp_request) = get_urls_and_create_sp_request(url_bag_res.get("urls").unwrap().as_dictionary().unwrap())?;
+
+        println!("First provisioning request...");
+        let response = client
+            .post(start_provisioning_url)
+            .body(sp_request)
+            .send()
+            .await?
+            .plist()
+            .await?;
+
+        let (fp_request, first_step) = self.create_fp_request(response.get_response()?)?;
+
+        println!("Second provisioning request...");
+        let response = client
+            .post(finish_provisioning_url)
+            .body(fp_request)
+            .send()
+            .await?
+            .plist()
+            .await?;
+
+        self.decode_and_end_provisioning(response.get_response()?, first_step)?;
+
+        Ok(())
+    }
+
+    #[cfg(not(feature = "async"))]
+    pub fn provision_device(&mut self) -> Result<()> {
+        let client = self.make_http_client()?;
+
+        let url_bag_res = client
+            .get("https://gsa.apple.com/grandslam/GsService2/lookup")
+            .send()?
+            .plist()?;
+
+        let (start_provisioning_url, finish_provisioning_url, sp_request) = get_urls_and_create_sp_request(url_bag_res.get("urls").unwrap().as_dictionary().unwrap())?;
+
+        println!("First provisioning request...");
+        let response = client
+            .post(start_provisioning_url)
+            .body(sp_request)
+            .send()?
+            .plist()?;
+
+        let (fp_request, first_step) = self.create_fp_request(response.get_response()?)?;
 
         println!("Second provisioning request...");
         let response = client
@@ -258,12 +334,7 @@ impl dyn ADIProxy {
             .send()?
             .plist()?;
 
-        let response = response.get_response()?;
-
-        let ptm = base64_engine.decode(response.get("ptm").unwrap().as_string().unwrap())?;
-        let tk = base64_engine.decode(response.get("tk").unwrap().as_string().unwrap())?;
-
-        self.end_provisioning(first_step.session, ptm.as_slice(), tk.as_slice())?;
+        self.decode_and_end_provisioning(response.get_response()?, first_step)?;
 
         Ok(())
     }
@@ -294,19 +365,9 @@ impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
 
         Ok(ADIProxyAnisetteProvider { adi_proxy })
     }
-}
 
-impl<ProxyType: ADIProxy + 'static> AnisetteHeadersProvider
-    for ADIProxyAnisetteProvider<ProxyType>
-{
-    fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+    fn _get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
         let adi_proxy = &mut self.adi_proxy as &mut dyn ADIProxy;
-
-        if !adi_proxy.is_machine_provisioned(DS_ID) {
-            adi_proxy.provision_device()?;
-        }
-
-        let base64_engine = base64::engine::general_purpose::STANDARD;
 
         let machine_data = adi_proxy.request_otp(DS_ID)?;
 
@@ -338,5 +399,32 @@ impl<ProxyType: ADIProxy + 'static> AnisetteHeadersProvider
         );
 
         Ok(headers)
+    }
+}
+
+#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
+impl<ProxyType: ADIProxy + 'static> AnisetteHeadersProvider
+    for ADIProxyAnisetteProvider<ProxyType>
+{
+    #[cfg(feature = "async")]
+    async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+        let adi_proxy = &mut self.adi_proxy as &mut dyn ADIProxy;
+
+        if !adi_proxy.is_machine_provisioned(DS_ID) {
+            adi_proxy.provision_device().await?;
+        }
+
+        self._get_anisette_headers()
+    }
+
+    #[cfg(not(feature = "async"))]
+    fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+        let adi_proxy = &mut self.adi_proxy as &mut dyn ADIProxy;
+
+        if !adi_proxy.is_machine_provisioned(DS_ID) {
+            adi_proxy.provision_device()?;
+        }
+
+        self._get_anisette_headers()
     }
 }

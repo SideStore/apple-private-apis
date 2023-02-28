@@ -1,3 +1,9 @@
+//! A library to generate "anisette" data. Docs are coming soon.
+//!
+//! If you want an async API, enable the `async` feature.
+//!
+//! If you want remote anisette, make sure the `remote-anisette` feature is enabled. (it's currently on by default)
+
 use crate::adi_proxy::{ADIProxyAnisetteProvider, ConfigurableADIProxy};
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 use anyhow::Result;
@@ -7,7 +13,7 @@ use std::path::PathBuf;
 pub mod adi_proxy;
 pub mod anisette_headers_provider;
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "macos")]
 pub mod store_services_core;
 
 #[cfg(target_os = "macos")]
@@ -36,6 +42,7 @@ impl std::error::Error for AnisetteMetaError {}
 
 pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
+#[derive(Clone)]
 pub struct AnisetteConfiguration {
     anisette_url: String,
     configuration_path: PathBuf,
@@ -83,15 +90,9 @@ impl AnisetteHeaders {
             return Ok(Box::new(prov));
         }
 
-        #[cfg(not(target_os = "macos"))]
-        {
-            if let Ok(mut ssc_adi_proxy) = store_services_core::StoreServicesCoreADIProxy::new(
-                configuration.configuration_path(),
-            ) {
-                let config_path = configuration.configuration_path();
-                ssc_adi_proxy.set_provisioning_path(config_path.to_str().ok_or(AnisetteMetaError::InvalidArgument("configuration.configuration_path".to_string()))?)?;
-                return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy, config_path.to_path_buf())?));
-            }
+        // TODO: handle Err because it will just go to remote anisette and not tell the user anything
+        if let Ok(ssc_anisette_headers_provider) = AnisetteHeaders::get_ssc_anisette_headers_provider(configuration.clone()) {
+            return Ok(ssc_anisette_headers_provider);
         }
 
         #[cfg(feature = "remote-anisette")]
@@ -102,6 +103,13 @@ impl AnisetteHeaders {
         #[cfg(not(feature = "remote-anisette"))]
         bail!(AnisetteMetaError::UnsupportedDevice)
     }
+
+    pub fn get_ssc_anisette_headers_provider<'lt>(configuration: AnisetteConfiguration) -> Result<Box<dyn AnisetteHeadersProvider>> {
+        let mut ssc_adi_proxy = store_services_core::StoreServicesCoreADIProxy::new(configuration.configuration_path())?;
+        let config_path = configuration.configuration_path();
+        ssc_adi_proxy.set_provisioning_path(config_path.to_str().ok_or(AnisetteMetaError::InvalidArgument("configuration.configuration_path".to_string()))?)?;
+        Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy, config_path.to_path_buf())?))
+    }
 }
 
 #[cfg(test)]
@@ -110,6 +118,7 @@ mod tests {
     use anyhow::Result;
     use std::path::PathBuf;
 
+    #[cfg(not(feature = "async"))]
     #[test]
     fn fetch_anisette_auto() -> Result<()> {
         let mut provider = AnisetteHeaders::get_anisette_headers_provider(
@@ -117,6 +126,28 @@ mod tests {
                 .set_configuration_path(PathBuf::new().join("anisette_test")),
         )?;
         println!("Headers: {:?}", provider.get_authentication_headers()?);
+        Ok(())
+    }
+
+    #[cfg(not(feature = "async"))]
+    #[test]
+    fn fetch_anisette_ssc() -> Result<()> {
+        let mut provider = AnisetteHeaders::get_ssc_anisette_headers_provider(
+            AnisetteConfiguration::new()
+                .set_configuration_path(PathBuf::new().join("anisette_test")),
+        )?;
+        println!("Headers: {:?}", provider.get_authentication_headers()?);
+        Ok(())
+    }
+
+    #[cfg(feature = "async")]
+    #[tokio::test]
+    async fn fetch_anisette_ssc_async() -> Result<()> {
+        let mut provider = AnisetteHeaders::get_ssc_anisette_headers_provider(
+            AnisetteConfiguration::new()
+                .set_configuration_path(PathBuf::new().join("anisette_test")),
+        )?;
+        println!("Headers: {:?}", provider.get_authentication_headers().await?);
         Ok(())
     }
 }
