@@ -357,10 +357,10 @@ impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
             identifier_file.write_all(&identifier)?;
         }
 
-        Self::new(adi_proxy, identifier)
+        Self::with_identifier(adi_proxy, identifier)
     }
 
-    pub fn new(mut adi_proxy: ProxyType, identifier: [u8; IDENTIFIER_LENGTH]) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
+    pub fn with_identifier(mut adi_proxy: ProxyType, identifier: [u8; IDENTIFIER_LENGTH]) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
         let mut local_user_uuid_hasher = Sha256::new();
         local_user_uuid_hasher.update(identifier);
 
