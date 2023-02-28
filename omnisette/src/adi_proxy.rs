@@ -374,6 +374,10 @@ impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
         Ok(ADIProxyAnisetteProvider { adi_proxy })
     }
 
+    fn adi_proxy(&mut self) -> ProxyType {
+        self.adi_proxy
+    }
+
     fn _get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
         let adi_proxy = &mut self.adi_proxy as &mut dyn ADIProxy;
 
