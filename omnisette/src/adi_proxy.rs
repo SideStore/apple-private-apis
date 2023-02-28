@@ -374,7 +374,7 @@ impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
         Ok(ADIProxyAnisetteProvider { adi_proxy })
     }
 
-    fn adi_proxy(&mut self) -> ProxyType {
+    pub fn adi_proxy(&mut self) -> ProxyType {
         self.adi_proxy
     }
 
