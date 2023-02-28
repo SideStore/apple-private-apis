@@ -31,11 +31,14 @@ mod tests {
     use crate::remote_anisette::RemoteAnisetteProvider;
     use crate::DEFAULT_ANISETTE_URL;
     use anyhow::Result;
+    use log::info;
 
     #[test]
     fn fetch_anisette_remote() -> Result<()> {
+        crate::tests::init_logger();
+
         let mut provider = RemoteAnisetteProvider::new(DEFAULT_ANISETTE_URL.to_string());
-        println!(
+        info!(
             "Remote headers: {:?}",
             (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?
         );

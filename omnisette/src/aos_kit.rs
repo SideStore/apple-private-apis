@@ -114,11 +114,14 @@ mod tests {
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
     use crate::aos_kit::AOSKitAnisetteProvider;
     use anyhow::Result;
+    use log::info;
 
     #[test]
     fn fetch_anisette_aoskit() -> Result<()> {
+        crate::tests::init_logger();
+
         let mut provider = AOSKitAnisetteProvider::new()?;
-        println!(
+        info!(
             "AOSKit headers: {:?}",
             (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?
         );

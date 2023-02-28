@@ -115,38 +115,58 @@ impl AnisetteHeaders {
 mod tests {
     use crate::{AnisetteConfiguration, AnisetteHeaders};
     use anyhow::Result;
+    use log::{info, LevelFilter};
+    use simplelog::{ColorChoice, ConfigBuilder, TermLogger, TerminalMode};
     use std::path::PathBuf;
+
+    pub fn init_logger() {
+        if TermLogger::init(
+            LevelFilter::Trace,
+            ConfigBuilder::new()
+                .set_target_level(LevelFilter::Error)
+                .add_filter_allow_str("omnisette")
+                .build(),
+            TerminalMode::Mixed,
+            ColorChoice::Auto,
+        ).is_ok() {}
+    }
 
     #[cfg(not(feature = "async"))]
     #[test]
     fn fetch_anisette_auto() -> Result<()> {
+        crate::tests::init_logger();
+
         let mut provider = AnisetteHeaders::get_anisette_headers_provider(
             AnisetteConfiguration::new()
                 .set_configuration_path(PathBuf::new().join("anisette_test")),
         )?;
-        println!("Headers: {:?}", provider.get_authentication_headers()?);
+        info!("Headers: {:?}", provider.get_authentication_headers()?);
         Ok(())
     }
 
     #[cfg(not(feature = "async"))]
     #[test]
     fn fetch_anisette_ssc() -> Result<()> {
+        crate::tests::init_logger();
+
         let mut provider = AnisetteHeaders::get_ssc_anisette_headers_provider(
             AnisetteConfiguration::new()
                 .set_configuration_path(PathBuf::new().join("anisette_test")),
         )?;
-        println!("Headers: {:?}", provider.get_authentication_headers()?);
+        info!("Headers: {:?}", provider.get_authentication_headers()?);
         Ok(())
     }
 
     #[cfg(feature = "async")]
     #[tokio::test]
     async fn fetch_anisette_ssc_async() -> Result<()> {
+        crate::tests::init_logger();
+
         let mut provider = AnisetteHeaders::get_ssc_anisette_headers_provider(
             AnisetteConfiguration::new()
                 .set_configuration_path(PathBuf::new().join("anisette_test")),
         )?;
-        println!("Headers: {:?}", provider.get_authentication_headers().await?);
+        info!("Headers: {:?}", provider.get_authentication_headers().await?);
         Ok(())
     }
 }
