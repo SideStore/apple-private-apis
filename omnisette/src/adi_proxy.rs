@@ -107,29 +107,29 @@ pub struct RequestOTPData {
 }
 
 pub trait ADIProxy {
-    pub fn erase_provisioning(&mut self, ds_id: i64) -> Result<(), ADIError>;
-    pub fn synchronize(&mut self, ds_id: i64, sim: &[u8]) -> Result<SynchronizeData, ADIError>;
-    pub fn destroy_provisioning_session(&mut self, session: u32) -> Result<(), ADIError>;
-    pub fn end_provisioning(&mut self, session: u32, ptm: &[u8], tk: &[u8]) -> Result<(), ADIError>;
-    pub fn start_provisioning(
+    fn erase_provisioning(&mut self, ds_id: i64) -> Result<(), ADIError>;
+    fn synchronize(&mut self, ds_id: i64, sim: &[u8]) -> Result<SynchronizeData, ADIError>;
+    fn destroy_provisioning_session(&mut self, session: u32) -> Result<(), ADIError>;
+    fn end_provisioning(&mut self, session: u32, ptm: &[u8], tk: &[u8]) -> Result<(), ADIError>;
+    fn start_provisioning(
         &mut self,
         ds_id: i64,
         spim: &[u8],
     ) -> Result<StartProvisioningData, ADIError>;
-    pub fn is_machine_provisioned(&self, ds_id: i64) -> bool;
-    pub fn request_otp(&self, ds_id: i64) -> Result<RequestOTPData, ADIError>;
+    fn is_machine_provisioned(&self, ds_id: i64) -> bool;
+    fn request_otp(&self, ds_id: i64) -> Result<RequestOTPData, ADIError>;
 
-    pub fn set_local_user_uuid(&mut self, local_user_uuid: String);
-    pub fn set_device_identifier(&mut self, device_identifier: String) -> Result<()>;
+    fn set_local_user_uuid(&mut self, local_user_uuid: String);
+    fn set_device_identifier(&mut self, device_identifier: String) -> Result<()>;
 
-    pub fn get_local_user_uuid(&self) -> String;
-    pub fn get_device_identifier(&self) -> String;
-    pub fn get_serial_number(&self) -> String;
+    fn get_local_user_uuid(&self) -> String;
+    fn get_device_identifier(&self) -> String;
+    fn get_serial_number(&self) -> String;
 }
 
 pub trait ConfigurableADIProxy: ADIProxy {
-    pub fn set_identifier(&mut self, identifier: &str) -> Result<(), ADIError>;
-    pub fn set_provisioning_path(&mut self, path: &str) -> Result<(), ADIError>;
+    fn set_identifier(&mut self, identifier: &str) -> Result<(), ADIError>;
+    fn set_provisioning_path(&mut self, path: &str) -> Result<(), ADIError>;
 }
 
 const AKD_USER_AGENT: &str = "akd/1.0 CFNetwork/808.1.4";
