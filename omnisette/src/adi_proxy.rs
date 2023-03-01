@@ -3,7 +3,7 @@ use crate::anisette_headers_provider::AnisetteHeadersProvider;
 use anyhow::Result;
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as base64_engine;
-use log::trace;
+use log::debug;
 use plist::{Dictionary, Value};
 use rand::RngCore;
 #[cfg(feature = "async")]
@@ -133,7 +133,7 @@ macro_rules! ADIProxy_make_http_client {
                 HeaderValue::from_str($adi_proxy.get_serial_number().as_str())?,
             );
 
-            trace!("Headers sent: {headers:?}");
+            debug!("Headers sent: {headers:?}");
 
             let http_client = ClientBuilder::new()
                 .http1_title_case_headers()
@@ -231,7 +231,7 @@ pub trait ADIProxy {
 
         let (start_provisioning_url, finish_provisioning_url, sp_request) = ADIProxy_get_urls_and_create_sp_request!(url_bag_res.get("urls").unwrap().as_dictionary().unwrap())?;
 
-        trace!("First provisioning request...");
+        debug!("First provisioning request...");
         let response = client
             .post(start_provisioning_url)
             .body(sp_request)
@@ -242,7 +242,7 @@ pub trait ADIProxy {
 
         let (fp_request, first_step) = ADIProxy_create_fp_request!(self, response.get_response()?)?;
 
-        trace!("Second provisioning request...");
+        debug!("Second provisioning request...");
         let response = client
             .post(finish_provisioning_url)
             .body(fp_request)
@@ -266,7 +266,7 @@ pub trait ADIProxy {
 
         let (start_provisioning_url, finish_provisioning_url, sp_request) = ADIProxy_get_urls_and_create_sp_request!(url_bag_res.get("urls").unwrap().as_dictionary().unwrap())?;
 
-        trace!("First provisioning request...");
+        debug!("First provisioning request...");
         let response = client
             .post(start_provisioning_url)
             .body(sp_request)
@@ -275,7 +275,7 @@ pub trait ADIProxy {
 
         let (fp_request, first_step) = ADIProxy_create_fp_request!(self, response.get_response()?)?;
 
-        trace!("Second provisioning request...");
+        debug!("Second provisioning request...");
         let response = client
             .post(finish_provisioning_url)
             .body(fp_request)

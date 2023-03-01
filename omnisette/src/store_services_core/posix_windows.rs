@@ -1,6 +1,6 @@
 use android_loader::sysv64;
 use libc::{O_CREAT, O_RDONLY, O_RDWR, O_WRONLY};
-use log::trace;
+use log::debug;
 use std::ffi::{CStr, CString};
 use std::mem::MaybeUninit;
 
@@ -17,13 +17,13 @@ extern "C" {
 // took from cosmopolitan libc
 #[sysv64]
 pub unsafe fn umask(mask: usize) -> usize {
-    trace!("umask: Windows specific implementation called!");
+    debug!("umask: Windows specific implementation called!");
     mask
 }
 
 #[sysv64]
 pub unsafe fn ftruncate(handle: i64, length: u64) -> usize {
-    trace!("ftruncate: Windows translate-call. handle: {}, length: {}", handle, length);
+    debug!("ftruncate: Windows translate-call. handle: {}, length: {}", handle, length);
     let ftr = _chsize(handle, length);
 
     ftr
@@ -60,7 +60,7 @@ impl PosixTimespec {
 
 #[sysv64]
 pub unsafe fn gettimeofday(timeval: *mut PosixTimeval, _tz: *mut PosixTimezone) -> isize {
-    trace!("gettimeofday: Windows specific implementation called!");
+    debug!("gettimeofday: Windows specific implementation called!");
     let mut ts = MaybeUninit::<libc::timespec>::zeroed();
 
     let ret = _timespec64_get(ts.as_mut_ptr(), 1);
@@ -116,7 +116,7 @@ impl ToWindows<CString> for CStr {
 
 #[sysv64]
 pub unsafe fn lstat(path: *const libc::c_char, buf: *mut StatLinux) -> libc::c_int {
-    trace!("lstat: Windows translate-call, path: {:?}", CStr::from_ptr(path));
+    debug!("lstat: Windows translate-call, path: {:?}", CStr::from_ptr(path));
     let mut stat_win = MaybeUninit::<libc::stat>::zeroed();
     let path = CStr::from_ptr(path).to_windows();
 
@@ -170,7 +170,7 @@ impl ToWindows<StatLinux> for libc::stat {
 
 #[sysv64]
 pub unsafe fn fstat(fildes: libc::c_int, buf: *mut StatLinux) -> libc::c_int {
-    trace!("fstat: Windows translate-call");
+    debug!("fstat: Windows translate-call");
     let mut stat_win = MaybeUninit::<libc::stat>::zeroed();
     let ret = libc::fstat(fildes, stat_win.as_mut_ptr());
     let stat_win = stat_win.assume_init();
@@ -182,37 +182,37 @@ pub unsafe fn fstat(fildes: libc::c_int, buf: *mut StatLinux) -> libc::c_int {
 
 #[sysv64]
 pub unsafe fn malloc(size: libc::size_t) -> *mut libc::c_void {
-    // trace!("malloc: Windows translate-call");
+    // debug!("malloc: Windows translate-call");
     libc::malloc(size)
 }
 
 #[sysv64]
 pub unsafe fn free(p: *mut libc::c_void) {
-    // trace!("free: Windows translate-call");
+    // debug!("free: Windows translate-call");
     libc::free(p)
 }
 
 #[sysv64]
 pub unsafe fn strncpy(dst: *mut libc::c_char, src: *const libc::c_char, n: libc::size_t) -> *mut libc::c_char {
-    trace!("strncpy: Windows translate-call");
+    debug!("strncpy: Windows translate-call");
     libc::strncpy(dst, src, n)
 }
 
 #[sysv64]
 pub unsafe fn chmod(path: *const libc::c_char, mode: libc::c_int) -> libc::c_int {
-    trace!("chmod: Windows translate-call");
+    debug!("chmod: Windows translate-call");
     libc::chmod(path, mode)
 }
 
 #[sysv64]
 pub unsafe fn mkdir(path: *const libc::c_char) -> libc::c_int {
-    trace!("mkdir: Windows translate-call");
+    debug!("mkdir: Windows translate-call");
     libc::mkdir(path)
 }
 
 #[sysv64]
 pub unsafe fn open(path: *const libc::c_char, oflag: libc::c_int) -> libc::c_int {
-    trace!("open: Windows translate-call oflag 0o{:o}", oflag);
+    debug!("open: Windows translate-call oflag 0o{:o}", oflag);
 
     let path = CStr::from_ptr(path).to_windows();
 
@@ -237,13 +237,13 @@ pub unsafe fn open(path: *const libc::c_char, oflag: libc::c_int) -> libc::c_int
 
 #[sysv64]
 pub unsafe fn close(fd: libc::c_int) -> libc::c_int {
-    trace!("close: Windows translate-call");
+    debug!("close: Windows translate-call");
     libc::close(fd)
 }
 
 #[sysv64]
 pub unsafe fn read(fd: libc::c_int, buf: *mut libc::c_void, count: libc::c_uint) -> libc::c_int {
-    trace!("read: Windows translate-call");
+    debug!("read: Windows translate-call");
 
     let r = libc::read(fd, buf, count);
     r
@@ -251,7 +251,7 @@ pub unsafe fn read(fd: libc::c_int, buf: *mut libc::c_void, count: libc::c_uint)
 
 #[sysv64]
 pub unsafe fn write(fd: libc::c_int, buf: *const libc::c_void, count: libc::c_uint) -> libc::c_int {
-    trace!("write: Windows translate-call");
+    debug!("write: Windows translate-call");
     libc::write(fd, buf, count)
 }
 
