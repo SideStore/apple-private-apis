@@ -1,5 +1,9 @@
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 use anyhow::Result;
+#[cfg(feature = "async")]
+use reqwest::get;
+#[cfg(not(feature = "async"))]
+use reqwest::blocking::get;
 use std::collections::HashMap;
 
 pub struct RemoteAnisetteProvider {
@@ -14,14 +18,9 @@ impl RemoteAnisetteProvider {
 
 #[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 impl AnisetteHeadersProvider for RemoteAnisetteProvider {
-    #[cfg(feature = "async")]
+    #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
     async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
-        Ok(reqwest::get(&self.url).await?.json().await?)
-    }
-
-    #[cfg(not(feature = "async"))]
-    fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
-        Ok(reqwest::blocking::get(&self.url)?.json()?)
+        Ok(get(&self.url).await?.json().await?)
     }
 }
 

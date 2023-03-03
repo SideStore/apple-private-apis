@@ -21,6 +21,7 @@ android-loader = { git = "https://github.com/Dadoum/android-loader" }
 libc = "0.2"
 log = "0.4"
 async-trait = { version = "0.1", optional = true }
+remove-async-await = "1.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 dlopen2 = "0.4"

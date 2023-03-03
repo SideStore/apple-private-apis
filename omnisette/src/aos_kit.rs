@@ -21,8 +21,12 @@ impl<'lt> AOSKitAnisetteProvider<'lt> {
             ak_device: Class::get("AKDevice").ok_or(AOSKitError::ClassLoadFailed)?,
         })
     }
+}
 
-    fn _get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
+impl<'lt> AnisetteHeadersProvider for AOSKitAnisetteProvider<'lt> {
+    #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
+    async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
         let mut headers_map = HashMap::new();
 
         let headers: *const NSObject = unsafe {
@@ -80,19 +84,6 @@ impl<'lt> AOSKitAnisetteProvider<'lt> {
         );
 
         Ok(headers_map)
-    }
-}
-
-#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
-impl<'lt> AnisetteHeadersProvider for AOSKitAnisetteProvider<'lt> {
-    #[cfg(feature = "async")]
-    async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
-        self._get_anisette_headers()
-    }
-
-    #[cfg(not(feature = "async"))]
-    fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
-        self._get_anisette_headers()
     }
 }
 
