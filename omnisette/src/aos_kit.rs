@@ -26,7 +26,7 @@ impl<'lt> AOSKitAnisetteProvider<'lt> {
 #[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 impl<'lt> AnisetteHeadersProvider for AOSKitAnisetteProvider<'lt> {
     #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
-    async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+    async fn get_anisette_headers(&mut self, _skip_provisioning: bool) -> Result<HashMap<String, String>> {
         let mut headers_map = HashMap::new();
 
         let headers: *const NSObject = unsafe {

@@ -324,10 +324,10 @@ impl<ProxyType: ADIProxy + 'static> AnisetteHeadersProvider
     for ADIProxyAnisetteProvider<ProxyType>
 {
     #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
-    async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+    async fn get_anisette_headers(&mut self, skip_provisioning: bool) -> Result<HashMap<String, String>> {
         let adi_proxy = &mut self.adi_proxy as &mut dyn ADIProxy;
 
-        if !adi_proxy.is_machine_provisioned(DS_ID) {
+        if !adi_proxy.is_machine_provisioned(DS_ID) && !skip_provisioning {
             adi_proxy.provision_device().await?;
         }
 

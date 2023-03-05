@@ -19,7 +19,7 @@ impl RemoteAnisetteProvider {
 #[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 impl AnisetteHeadersProvider for RemoteAnisetteProvider {
     #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
-    async fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+    async fn get_anisette_headers(&mut self, _skip_provisioning: bool) -> Result<HashMap<String, String>> {
         Ok(get(&self.url).await?.json().await?)
     }
 }
