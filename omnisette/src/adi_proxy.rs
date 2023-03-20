@@ -1,17 +1,42 @@
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
 use anyhow::Result;
 use base64::Engine;
-#[cfg(not(target_os = "macos"))]
-use machineid_rs::{Encryption, HWIDComponent, IdBuilder};
 use reqwest::blocking::{Client, ClientBuilder};
 use reqwest::header::{HeaderMap, HeaderValue};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
+use std::io::{Read, Write};
+use std::path::PathBuf;
+use plist::Dictionary;
+use rand::RngCore;
+use sha2::{Digest, Sha256};
+use crate::adi_proxy::ProvisioningError::InvalidResponse;
+
+#[derive(Debug)]
+pub struct ServerError {
+    pub code: i64,
+    pub description: String
+}
+
+#[derive(Debug)]
+pub enum ProvisioningError {
+    InvalidResponse,
+    ServerError(ServerError)
+}
+
+impl std::fmt::Display for ProvisioningError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for ProvisioningError {}
 
 #[derive(Debug)]
 pub enum ADIError {
     Unknown(i32),
+    ProvisioningError(ProvisioningError)
 }
 
 impl ADIError {
@@ -20,24 +45,27 @@ impl ADIError {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 trait ToPlist {
     fn plist(self) -> Result<plist::Dictionary>;
 }
 
-#[cfg(not(target_os = "macos"))]
 impl ToPlist for reqwest::blocking::Response {
     fn plist(self) -> Result<plist::Dictionary> {
-        Ok(plist::Value::from_reader_xml(&*self.bytes()?)?
-            .as_dictionary()
-            .unwrap()
-            .to_owned())
+        if let Ok(property_list) = plist::Value::from_reader_xml(&*self.bytes()?) {
+
+            Ok(property_list
+                .as_dictionary()
+                .unwrap()
+                .to_owned())
+        } else {
+            Err(ProvisioningError::InvalidResponse.into())
+        }
     }
 }
 
 impl Display for ADIError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self)
+        write!(f, "{self:?}")
     }
 }
 
@@ -86,11 +114,40 @@ pub trait ConfigurableADIProxy: ADIProxy {
 
 const AKD_USER_AGENT: &str = "akd/1.0 CFNetwork/808.1.4";
 const CLIENT_INFO_HEADER: &str =
-    "<iMac20,2> <Mac OS X;13.1;22C65> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>";
-
+    "<MacBookPro17,1> <macOS;12.2.1;21D62> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>";
 const DS_ID: i64 = -2;
 
-#[cfg(not(target_os = "macos"))]
+trait AppleRequestResult {
+    fn check_status(&self) -> Result<()>;
+    fn get_response(&self) -> Result<&Dictionary>;
+}
+
+impl AppleRequestResult for Dictionary {
+    fn check_status(&self) -> Result<()> {
+        let status = self.get("Status").ok_or(InvalidResponse)?.as_dictionary().unwrap();
+        let code = status.get("ec").unwrap().as_signed_integer().unwrap();
+        if code != 0 {
+            let description = status.get("em").unwrap().as_string().unwrap().to_string();
+            Err(ProvisioningError::ServerError(ServerError {
+                code,
+                description
+            }).into())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn get_response(&self) -> Result<&Dictionary> {
+        if let Some(response) = self.get("Response") {
+            let response = response.as_dictionary().unwrap();
+            response.check_status()?;
+            Ok(response)
+        } else {
+            Err(InvalidResponse.into())
+        }
+    }
+}
+
 impl dyn ADIProxy {
     fn make_http_client(&self) -> Result<Client> {
         let mut headers = HeaderMap::new();
@@ -113,12 +170,11 @@ impl dyn ADIProxy {
             HeaderValue::from_str(self.get_serial_number().as_str())?,
         );
 
-        println!("headers: {:?}", headers);
+        println!("Headers sent: {headers:?}");
 
         let http_client = ClientBuilder::new()
             .http1_title_case_headers()
             .danger_accept_invalid_certs(true)
-            .connection_verbose(true)
             .user_agent(AKD_USER_AGENT)
             .default_headers(headers) // TODO: pin the apple certificate
             .build()?;
@@ -148,7 +204,6 @@ impl dyn ADIProxy {
             .as_string()
             .unwrap();
 
-        // Create a basically empty plist, containing the keys "Header" and "Request"
         let mut body = plist::Dictionary::new();
         body.insert(
             "Header".to_string(),
@@ -162,13 +217,14 @@ impl dyn ADIProxy {
         let mut sp_request = Vec::new();
         plist::Value::Dictionary(body).to_writer_xml(&mut sp_request)?;
 
+        println!("First provisioning request...");
         let response = client
             .post(start_provisioning_url)
             .body(sp_request)
             .send()?
             .plist()?;
 
-        let response = response.get("Response").unwrap().as_dictionary().unwrap();
+        let response = response.get_response()?;
 
         let spim = response
             .get("spim")
@@ -195,13 +251,14 @@ impl dyn ADIProxy {
         let mut fp_request = Vec::new();
         plist::Value::Dictionary(body).to_writer_xml(&mut fp_request)?;
 
+        println!("Second provisioning request...");
         let response = client
             .post(finish_provisioning_url)
             .body(fp_request)
             .send()?
             .plist()?;
 
-        let response = response.get("Response").unwrap().as_dictionary().unwrap();
+        let response = response.get_response()?;
 
         let ptm = base64_engine.decode(response.get("ptm").unwrap().as_string().unwrap())?;
         let tk = base64_engine.decode(response.get("tk").unwrap().as_string().unwrap())?;
@@ -216,28 +273,29 @@ pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
     adi_proxy: ProxyType,
 }
 
-// arbitrary key
-const ADI_KEY: &str = "The most secure key is this one. Not only because it is open-source, but also because I said it, and that it is real. C'est réel en fait. ";
-
-#[cfg(not(target_os = "macos"))]
 impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
-    pub fn new(mut adi_proxy: ProxyType) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
-        let mut identifier = IdBuilder::new(Encryption::SHA1);
-        identifier
-            .add_component(HWIDComponent::MachineName)
-            .add_component(HWIDComponent::MacAddress)
-            .add_component(HWIDComponent::SystemID);
+    pub fn new(mut adi_proxy: ProxyType, configuration_path: PathBuf) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
+        let identifier_file_path = configuration_path.join("identifier");
+        let mut identifier_file = std::fs::OpenOptions::new().create(true).read(true).write(true).open(identifier_file_path)?;
+        const IDENTIFIER_LENGTH: usize = 16;
+        let mut identifier = [0u8; IDENTIFIER_LENGTH];
+        if identifier_file.metadata()?.len() == IDENTIFIER_LENGTH as u64 {
+            identifier_file.read_exact(&mut identifier)?;
+        } else {
+            rand::thread_rng().fill_bytes(&mut identifier);
+            identifier_file.write_all(&identifier)?;
+        }
 
-        adi_proxy.set_device_identifier(identifier.build(ADI_KEY)?)?;
+        let mut local_user_uuid_hasher = Sha256::new();
+        local_user_uuid_hasher.update(identifier);
 
-        identifier.hash = Encryption::SHA256;
-        adi_proxy.set_local_user_uuid(identifier.build(ADI_KEY)?.to_ascii_uppercase());
+        adi_proxy.set_device_identifier(uuid::Uuid::from_bytes(identifier).to_string().to_uppercase())?; // UUID, uppercase
+        adi_proxy.set_local_user_uuid(hex::encode(local_user_uuid_hasher.finalize()).to_uppercase()); // 64 uppercase character hex
 
         Ok(ADIProxyAnisetteProvider { adi_proxy })
     }
 }
 
-#[cfg(not(target_os = "macos"))]
 impl<ProxyType: ADIProxy + 'static> AnisetteHeadersProvider
     for ADIProxyAnisetteProvider<ProxyType>
 {

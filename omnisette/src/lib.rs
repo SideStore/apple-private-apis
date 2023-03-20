@@ -4,37 +4,47 @@ use anyhow::Result;
 use std::fmt::Formatter;
 use std::path::PathBuf;
 
-mod adi_proxy;
-mod anisette_headers_provider;
+pub mod adi_proxy;
+pub mod anisette_headers_provider;
 
 #[cfg(not(target_os = "macos"))]
-mod store_services_core;
+pub mod store_services_core;
 
 #[cfg(target_os = "macos")]
-mod aos_kit;
+pub mod aos_kit;
 
 #[cfg(feature = "remote-anisette")]
-mod remote_anisette;
+pub mod remote_anisette;
 
 #[allow(dead_code)]
 pub struct AnisetteHeaders;
 
+#[allow(dead_code)]
 #[derive(Debug)]
 enum AnisetteMetaError {
     UnsupportedDevice,
+    InvalidArgument(String)
 }
 
 impl std::fmt::Display for AnisetteMetaError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AnisetteMetaError::{:?}", self)
+        write!(f, "AnisetteMetaError::{self:?}")
     }
 }
+
+impl std::error::Error for AnisetteMetaError {}
 
 pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
 pub struct AnisetteConfiguration {
     anisette_url: String,
     configuration_path: PathBuf,
+}
+
+impl Default for AnisetteConfiguration {
+    fn default() -> Self {
+        AnisetteConfiguration::new()
+    }
 }
 
 impl AnisetteConfiguration {
@@ -78,9 +88,9 @@ impl AnisetteHeaders {
             if let Ok(mut ssc_adi_proxy) = store_services_core::StoreServicesCoreADIProxy::new(
                 configuration.configuration_path(),
             ) {
-                let _ = ssc_adi_proxy
-                    .set_provisioning_path(configuration.configuration_path().to_str().unwrap());
-                return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy)?));
+                let config_path = configuration.configuration_path();
+                ssc_adi_proxy.set_provisioning_path(config_path.to_str().ok_or(AnisetteMetaError::InvalidArgument("configuration.configuration_path".to_string()))?)?;
+                return Ok(Box::new(ADIProxyAnisetteProvider::new(ssc_adi_proxy, config_path.to_path_buf())?));
             }
         }
 
