@@ -11,6 +11,7 @@ A set of Rust libraries to interact with apple's private APIs and servers, made 
 | [`apple-dev-apis`](./apple-dev-apis/) | An implementation of Apple's Xcode signing/developer APIs |
 
 <!-- credits -->
+
 ## More details
 
 A detailed write up on Apple's APIs and more is coming soon.
@@ -18,3 +19,5 @@ A detailed write up on Apple's APIs and more is coming soon.
 ## Project Status
 
 This project is currently in a very early stage. Check the [SideInstaller Github Project](https://github.com/orgs/SideStore/projects/5) and the [repo's issues](https://github.com/SideStore/apple-private-apis/issues) for things that are yet to be done.
+
+![Alt](https://repobeats.axiom.co/api/embed/4d96ea07d261281763b31ead2354ad6dcd6afed1.svg "Repobeats analytics image")
