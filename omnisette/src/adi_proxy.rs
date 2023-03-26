@@ -248,7 +248,7 @@ pub trait ConfigurableADIProxy: ADIProxy {
 
 pub const AKD_USER_AGENT: &str = "akd/1.0 CFNetwork/808.1.4";
 pub const CLIENT_INFO_HEADER: &str =
-    "<MacBookPro17,1> <macOS;12.2.1;21D62> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>";
+    "<MacBookPro13,2> <macOS;13.1;22C65> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>";
 pub const DS_ID: i64 = -2;
 pub const IDENTIFIER_LENGTH: usize = 16;
 pub type Identifier = [u8; IDENTIFIER_LENGTH];
