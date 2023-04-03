@@ -276,6 +276,7 @@ impl dyn ADIProxy {
         let tk = base64_engine.decode(response.get("tk").unwrap().as_string().unwrap())?;
 
         self.end_provisioning(first_step.session, ptm.as_slice(), tk.as_slice())?;
+        println!("Done.");
 
         Ok(())
     }

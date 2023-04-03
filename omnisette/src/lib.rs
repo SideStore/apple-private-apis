@@ -12,7 +12,6 @@ use std::path::PathBuf;
 
 pub mod adi_proxy;
 pub mod anisette_headers_provider;
-
 pub mod store_services_core;
 
 #[cfg(target_os = "macos")]
@@ -21,6 +20,10 @@ pub mod aos_kit;
 #[cfg(feature = "remote-anisette")]
 pub mod remote_anisette;
 
+// C bindings
+mod omnisette_c;
+
+#[allow(dead_code)]
 pub struct AnisetteHeaders;
 
 #[allow(dead_code)]
@@ -80,13 +83,39 @@ impl AnisetteConfiguration {
     }
 }
 
+pub enum AnisetteHeadersProviderType {
+    Local,
+    Remote
+}
+
+pub struct AnisetteHeadersProviderRes {
+    pub provider: Box<dyn AnisetteHeadersProvider>,
+    pub provider_type: AnisetteHeadersProviderType
+}
+
+impl AnisetteHeadersProviderRes {
+    pub fn local(provider: Box<dyn AnisetteHeadersProvider>) -> AnisetteHeadersProviderRes {
+        AnisetteHeadersProviderRes {
+            provider,
+            provider_type: AnisetteHeadersProviderType::Local
+        }
+    }
+
+    pub fn remote(provider: Box<dyn AnisetteHeadersProvider>) -> AnisetteHeadersProviderRes {
+        AnisetteHeadersProviderRes {
+            provider,
+            provider_type: AnisetteHeadersProviderType::Remote
+        }
+    }
+}
+
 impl AnisetteHeaders {
     pub fn get_anisette_headers_provider(
         configuration: AnisetteConfiguration,
-    ) -> Result<Box<dyn AnisetteHeadersProvider>> {
+    ) -> Result<AnisetteHeadersProviderRes> {
         #[cfg(target_os = "macos")]
         if let Ok(prov) = aos_kit::AOSKitAnisetteProvider::new() {
-            return Ok(Box::new(prov));
+            return Ok(AnisetteHeadersProviderRes::local(Box::new(prov)));
         }
 
         // TODO: handle Err because it will just go to remote anisette and not tell the user anything
@@ -97,9 +126,9 @@ impl AnisetteHeaders {
         }
 
         #[cfg(feature = "remote-anisette")]
-        return Ok(Box::new(remote_anisette::RemoteAnisetteProvider::new(
+        return Ok(AnisetteHeadersProviderRes::remote(Box::new(remote_anisette::RemoteAnisetteProvider::new(
             configuration.anisette_url,
-        )));
+        ))));
 
         #[cfg(not(feature = "remote-anisette"))]
         bail!(AnisetteMetaError::UnsupportedDevice)

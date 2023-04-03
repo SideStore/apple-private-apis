@@ -1,10 +1,14 @@
 #[cfg(target_family = "windows")]
 mod posix_windows;
+#[cfg(target_os = "macos")]
+mod posix_macos;
 
 use crate::adi_proxy::{
     ADIError, ADIProxy, ConfigurableADIProxy, RequestOTPData, StartProvisioningData,
     SynchronizeData,
 };
+
+use std::collections::HashMap;
 use android_loader::android_library::AndroidLibrary;
 use android_loader::sysv64_type;
 use android_loader::{hook_manager, sysv64};
@@ -344,11 +348,10 @@ struct LoaderHelpers;
 
 use rand::Rng;
 
-#[cfg(target_family = "unix")]
-use libc::{
-    chmod, close, free, fstat, ftruncate, gettimeofday, lstat, malloc, mkdir, open, read, strncpy,
-    umask, write,
-};
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
+use libc::{chmod, close, free, fstat, ftruncate, gettimeofday, lstat, malloc, mkdir, open, read, strncpy, umask, write};
+#[cfg(target_os = "macos")]
+use posix_macos::*;
 
 static mut ERRNO: i32 = 0;
 
