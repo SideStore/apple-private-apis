@@ -20,9 +20,6 @@ pub mod aos_kit;
 #[cfg(feature = "remote-anisette")]
 pub mod remote_anisette;
 
-// C bindings
-mod omnisette_c;
-
 #[allow(dead_code)]
 pub struct AnisetteHeaders;
 
