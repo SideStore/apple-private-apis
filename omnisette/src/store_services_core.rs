@@ -415,24 +415,3 @@ impl std::fmt::Display for ADIStoreSericesCoreErr {
 }
 
 impl std::error::Error for ADIStoreSericesCoreErr {}
-
-#[cfg(test)]
-mod tests {
-    use crate::adi_proxy::ADIProxyAnisetteProvider;
-    use crate::anisette_headers_provider::AnisetteHeadersProvider;
-    use crate::store_services_core::StoreServicesCoreADIProxy;
-    use anyhow::Result;
-    use std::path::PathBuf;
-
-    #[test]
-    fn fetch_anisette_ssc() -> Result<()> {
-        let path = PathBuf::new().join("anisette_test");
-        let proxy = StoreServicesCoreADIProxy::new(&path)?;
-        let mut provider = ADIProxyAnisetteProvider::new(proxy, path)?;
-        println!(
-            "SSC headers: {:?}",
-            (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?
-        );
-        Ok(())
-    }
-}

@@ -13,7 +13,6 @@ use std::path::PathBuf;
 pub mod adi_proxy;
 pub mod anisette_headers_provider;
 
-#[cfg(not(target_os = "macos"))]
 pub mod store_services_core;
 
 #[cfg(target_os = "macos")]
