@@ -23,8 +23,13 @@ impl<'lt> AOSKitAnisetteProvider<'lt> {
     }
 }
 
+#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 impl<'lt> AnisetteHeadersProvider for AOSKitAnisetteProvider<'lt> {
-    fn get_anisette_headers(&mut self) -> Result<HashMap<String, String>> {
+    #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
+    async fn get_anisette_headers(
+        &mut self,
+        _skip_provisioning: bool,
+    ) -> Result<HashMap<String, String>> {
         let mut headers_map = HashMap::new();
 
         let headers: *const NSObject = unsafe {
@@ -98,16 +103,19 @@ impl Display for AOSKitError {
 
 impl Error for AOSKitError {}
 
-#[cfg(test)]
+#[cfg(all(test, not(feature = "async")))]
 mod tests {
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
     use crate::aos_kit::AOSKitAnisetteProvider;
     use anyhow::Result;
+    use log::info;
 
     #[test]
     fn fetch_anisette_aoskit() -> Result<()> {
+        crate::tests::init_logger();
+
         let mut provider = AOSKitAnisetteProvider::new()?;
-        println!(
+        info!(
             "AOSKit headers: {:?}",
             (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?
         );
