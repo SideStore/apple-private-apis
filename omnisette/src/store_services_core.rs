@@ -1,14 +1,17 @@
 #[cfg(target_family = "windows")]
 mod posix_windows;
 
-use std::collections::HashMap;
+use crate::adi_proxy::{
+    ADIError, ADIProxy, ConfigurableADIProxy, RequestOTPData, StartProvisioningData,
+    SynchronizeData,
+};
 use android_loader::android_library::AndroidLibrary;
+use android_loader::sysv64_type;
+use android_loader::{hook_manager, sysv64};
 use anyhow::Result;
-use crate::adi_proxy::{ADIError, ADIProxy, ConfigurableADIProxy, RequestOTPData, StartProvisioningData, SynchronizeData};
+use std::collections::HashMap;
 use std::ffi::{c_char, CString};
 use std::path::PathBuf;
-use android_loader::{hook_manager, sysv64};
-use android_loader::sysv64_type;
 
 pub struct StoreServicesCoreADIProxy<'lt> {
     #[allow(dead_code)]
@@ -21,40 +24,42 @@ pub struct StoreServicesCoreADIProxy<'lt> {
     adi_set_provisioning_path: sysv64_type!(fn(path: *const u8) -> i32),
 
     adi_provisioning_erase: sysv64_type!(fn(ds_id: i64) -> i32),
-    adi_synchronize: sysv64_type!(fn(
-        ds_id: i64,
-        sim: *const u8,
-        sim_length: u32,
-        out_mid: *mut *const u8,
-        out_mid_length: *mut u32,
-        out_srm: *mut *const u8,
-        out_srm_length: *mut u32,
-    ) -> i32),
+    adi_synchronize: sysv64_type!(
+        fn(
+            ds_id: i64,
+            sim: *const u8,
+            sim_length: u32,
+            out_mid: *mut *const u8,
+            out_mid_length: *mut u32,
+            out_srm: *mut *const u8,
+            out_srm_length: *mut u32,
+        ) -> i32
+    ),
     adi_provisioning_destroy: sysv64_type!(fn(session: u32) -> i32),
-    adi_provisioning_end: sysv64_type!(fn(
-        session: u32,
-        ptm: *const u8,
-        ptm_length: u32,
-        tk: *const u8,
-        tk_length: u32,
-    ) -> i32),
-    adi_provisioning_start: sysv64_type!(fn(
-        ds_id: i64,
-        spim: *const u8,
-        spim_length: u32,
-        out_cpim: *mut *const u8,
-        out_cpim_length: *mut u32,
-        out_session: *mut u32,
-    ) -> i32),
+    adi_provisioning_end: sysv64_type!(
+        fn(session: u32, ptm: *const u8, ptm_length: u32, tk: *const u8, tk_length: u32) -> i32
+    ),
+    adi_provisioning_start: sysv64_type!(
+        fn(
+            ds_id: i64,
+            spim: *const u8,
+            spim_length: u32,
+            out_cpim: *mut *const u8,
+            out_cpim_length: *mut u32,
+            out_session: *mut u32,
+        ) -> i32
+    ),
     adi_get_login_code: sysv64_type!(fn(ds_id: i64) -> i32),
     adi_dispose: sysv64_type!(fn(ptr: *const u8) -> i32),
-    adi_otp_request: sysv64_type!(fn(
-        ds_id: i64,
-        out_mid: *mut *const u8,
-        out_mid_size: *mut u32,
-        out_otp: *mut *const u8,
-        out_otp_size: *mut u32,
-    ) -> i32),
+    adi_otp_request: sysv64_type!(
+        fn(
+            ds_id: i64,
+            out_mid: *mut *const u8,
+            out_mid_size: *mut u32,
+            out_otp: *mut *const u8,
+            out_otp_size: *mut u32,
+        ) -> i32
+    ),
 }
 
 impl StoreServicesCoreADIProxy<'_> {
@@ -68,8 +73,7 @@ impl StoreServicesCoreADIProxy<'_> {
                 return Err(ADIStoreSericesCoreErr::MissingLibraries.into());
             }
 
-            let library_path = library_path
-                .canonicalize()?;
+            let library_path = library_path.canonicalize()?;
 
             #[cfg(target_arch = "x86_64")]
             const ARCH: &str = "x86_64";
@@ -80,31 +84,58 @@ impl StoreServicesCoreADIProxy<'_> {
             #[cfg(target_arch = "aarch64")]
             const ARCH: &str = "arm64-v8a";
 
-            let native_library_path = library_path
-                .join("lib")
-                .join(ARCH);
+            let native_library_path = library_path.join("lib").join(ARCH);
 
             let path = native_library_path.join("libstoreservicescore.so");
             let path = path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?;
             let store_services_core = AndroidLibrary::load(path)?;
 
-            let adi_load_library_with_path: sysv64_type!(fn(path: *const u8) -> i32)
-                = std::mem::transmute(store_services_core.get_symbol("kq56gsgHG6").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?);
+            let adi_load_library_with_path: sysv64_type!(fn(path: *const u8) -> i32) =
+                std::mem::transmute(
+                    store_services_core
+                        .get_symbol("kq56gsgHG6")
+                        .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?,
+                );
 
-            let path = CString::new(native_library_path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?).unwrap();
+            let path = CString::new(
+                native_library_path
+                    .to_str()
+                    .ok_or(ADIStoreSericesCoreErr::Misc)?,
+            )
+            .unwrap();
             assert_eq!((adi_load_library_with_path)(path.as_ptr() as *const u8), 0);
 
-            let adi_set_android_id = store_services_core.get_symbol("Sph98paBcz").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
-            let adi_set_provisioning_path = store_services_core.get_symbol("nf92ngaK92").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+            let adi_set_android_id = store_services_core
+                .get_symbol("Sph98paBcz")
+                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+            let adi_set_provisioning_path = store_services_core
+                .get_symbol("nf92ngaK92")
+                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
 
-            let adi_provisioning_erase = store_services_core.get_symbol("p435tmhbla").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
-            let adi_synchronize = store_services_core.get_symbol("tn46gtiuhw").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
-            let adi_provisioning_destroy = store_services_core.get_symbol("fy34trz2st").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
-            let adi_provisioning_end = store_services_core.get_symbol("uv5t6nhkui").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
-            let adi_provisioning_start = store_services_core.get_symbol("rsegvyrt87").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
-            let adi_get_login_code = store_services_core.get_symbol("aslgmuibau").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
-            let adi_dispose = store_services_core.get_symbol("jk24uiwqrg").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
-            let adi_otp_request = store_services_core.get_symbol("qi864985u0").ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+            let adi_provisioning_erase = store_services_core
+                .get_symbol("p435tmhbla")
+                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+            let adi_synchronize = store_services_core
+                .get_symbol("tn46gtiuhw")
+                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+            let adi_provisioning_destroy = store_services_core
+                .get_symbol("fy34trz2st")
+                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+            let adi_provisioning_end = store_services_core
+                .get_symbol("uv5t6nhkui")
+                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+            let adi_provisioning_start = store_services_core
+                .get_symbol("rsegvyrt87")
+                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+            let adi_get_login_code = store_services_core
+                .get_symbol("aslgmuibau")
+                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+            let adi_dispose = store_services_core
+                .get_symbol("jk24uiwqrg")
+                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+            let adi_otp_request = store_services_core
+                .get_symbol("qi864985u0")
+                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
 
             let mut proxy = StoreServicesCoreADIProxy {
                 store_services_core,
@@ -125,7 +156,9 @@ impl StoreServicesCoreADIProxy<'_> {
                 adi_otp_request: std::mem::transmute(adi_otp_request),
             };
 
-            proxy.set_provisioning_path(library_path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?)?;
+            proxy.set_provisioning_path(
+                library_path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?,
+            )?;
 
             Ok(proxy)
         }
@@ -136,7 +169,7 @@ impl ADIProxy for StoreServicesCoreADIProxy<'_> {
     fn erase_provisioning(&mut self, ds_id: i64) -> Result<(), ADIError> {
         match (self.adi_provisioning_erase)(ds_id) {
             0 => Ok(()),
-            err => Err(ADIError::resolve(err))
+            err => Err(ADIError::resolve(err)),
         }
     }
 
@@ -150,7 +183,15 @@ impl ADIProxy for StoreServicesCoreADIProxy<'_> {
             let mut srm_size: u32 = 0;
             let mut srm_ptr: *const u8 = std::ptr::null();
 
-            match (self.adi_synchronize)(ds_id, sim_ptr, sim_size, &mut mid_ptr, &mut mid_size, &mut srm_ptr, &mut srm_size) {
+            match (self.adi_synchronize)(
+                ds_id,
+                sim_ptr,
+                sim_size,
+                &mut mid_ptr,
+                &mut mid_size,
+                &mut srm_ptr,
+                &mut srm_size,
+            ) {
                 0 => {
                     let mut mid = vec![0; mid_size as usize];
                     let mut srm = vec![0; srm_size as usize];
@@ -161,12 +202,9 @@ impl ADIProxy for StoreServicesCoreADIProxy<'_> {
                     (self.adi_dispose)(mid_ptr);
                     (self.adi_dispose)(srm_ptr);
 
-                    Ok(SynchronizeData {
-                        mid,
-                        srm
-                    })
-                },
-                err => Err(ADIError::resolve(err))
+                    Ok(SynchronizeData { mid, srm })
+                }
+                err => Err(ADIError::resolve(err)),
             }
         }
     }
@@ -174,7 +212,7 @@ impl ADIProxy for StoreServicesCoreADIProxy<'_> {
     fn destroy_provisioning_session(&mut self, session: u32) -> Result<(), ADIError> {
         match (self.adi_provisioning_destroy)(session) {
             0 => Ok(()),
-            err => Err(ADIError::resolve(err))
+            err => Err(ADIError::resolve(err)),
         }
     }
 
@@ -187,11 +225,15 @@ impl ADIProxy for StoreServicesCoreADIProxy<'_> {
 
         match (self.adi_provisioning_end)(session, ptm_ptr, ptm_size, tk_ptr, tk_size) {
             0 => Ok(()),
-            err => Err(ADIError::resolve(err))
+            err => Err(ADIError::resolve(err)),
         }
     }
 
-    fn start_provisioning(&mut self, ds_id: i64, spim: &[u8]) -> Result<StartProvisioningData, ADIError> {
+    fn start_provisioning(
+        &mut self,
+        ds_id: i64,
+        spim: &[u8],
+    ) -> Result<StartProvisioningData, ADIError> {
         unsafe {
             let spim_size = spim.len() as u32;
             let spim_ptr = spim.as_ptr();
@@ -201,7 +243,14 @@ impl ADIProxy for StoreServicesCoreADIProxy<'_> {
 
             let mut session: u32 = 0;
 
-            match (self.adi_provisioning_start)(ds_id, spim_ptr, spim_size, &mut cpim_ptr, &mut cpim_size, &mut session) {
+            match (self.adi_provisioning_start)(
+                ds_id,
+                spim_ptr,
+                spim_size,
+                &mut cpim_ptr,
+                &mut cpim_size,
+                &mut session,
+            ) {
                 0 => {
                     let mut cpim = vec![0; cpim_size as usize];
 
@@ -209,12 +258,9 @@ impl ADIProxy for StoreServicesCoreADIProxy<'_> {
 
                     (self.adi_dispose)(cpim_ptr);
 
-                    Ok(StartProvisioningData {
-                        cpim,
-                        session
-                    })
-                },
-                err => Err(ADIError::resolve(err))
+                    Ok(StartProvisioningData { cpim, session })
+                }
+                err => Err(ADIError::resolve(err)),
             }
         }
     }
@@ -230,7 +276,13 @@ impl ADIProxy for StoreServicesCoreADIProxy<'_> {
             let mut otp_size: u32 = 0;
             let mut otp_ptr: *const u8 = std::ptr::null();
 
-            match (self.adi_otp_request)(ds_id, &mut mid_ptr, &mut mid_size, &mut otp_ptr, &mut otp_size) {
+            match (self.adi_otp_request)(
+                ds_id,
+                &mut mid_ptr,
+                &mut mid_size,
+                &mut otp_ptr,
+                &mut otp_size,
+            ) {
                 0 => {
                     let mut mid = vec![0; mid_size as usize];
                     let mut otp = vec![0; otp_size as usize];
@@ -241,12 +293,9 @@ impl ADIProxy for StoreServicesCoreADIProxy<'_> {
                     (self.adi_dispose)(mid_ptr);
                     (self.adi_dispose)(otp_ptr);
 
-                    Ok(RequestOTPData {
-                        mid,
-                        otp
-                    })
-                },
-                err => Err(ADIError::resolve(err))
+                    Ok(RequestOTPData { mid, otp })
+                }
+                err => Err(ADIError::resolve(err)),
             }
         }
     }
@@ -278,7 +327,7 @@ impl ConfigurableADIProxy for StoreServicesCoreADIProxy<'_> {
     fn set_identifier(&mut self, identifier: &str) -> Result<(), ADIError> {
         match (self.adi_set_android_id)(identifier.as_ptr(), identifier.len() as u32) {
             0 => Ok(()),
-            err => Err(ADIError::resolve(err))
+            err => Err(ADIError::resolve(err)),
         }
     }
 
@@ -286,18 +335,20 @@ impl ConfigurableADIProxy for StoreServicesCoreADIProxy<'_> {
         let path = CString::new(path).unwrap();
         match (self.adi_set_provisioning_path)(path.as_ptr() as *const u8) {
             0 => Ok(()),
-            err => Err(ADIError::resolve(err))
+            err => Err(ADIError::resolve(err)),
         }
     }
 }
 
-#[allow(dead_code)]
 struct LoaderHelpers;
 
 use rand::Rng;
 
 #[cfg(target_family = "unix")]
-use libc::{chmod, close, free, fstat, ftruncate, gettimeofday, lstat, malloc, mkdir, open, read, strncpy, umask, write};
+use libc::{
+    chmod, close, free, fstat, ftruncate, gettimeofday, lstat, malloc, mkdir, open, read, strncpy,
+    umask, write,
+};
 
 static mut ERRNO: i32 = 0;
 
@@ -319,7 +370,6 @@ unsafe fn __system_property_get(_name: *const c_char, value: *mut c_char) -> i32
     return 1;
 }
 
-
 #[cfg(target_family = "windows")]
 use posix_windows::*;
 
@@ -328,7 +378,10 @@ impl LoaderHelpers {
         let mut hooks = HashMap::new();
         hooks.insert("arc4random".to_owned(), arc4random as usize);
         hooks.insert("chmod".to_owned(), chmod as usize);
-        hooks.insert("__system_property_get".to_owned(), __system_property_get as usize);
+        hooks.insert(
+            "__system_property_get".to_owned(),
+            __system_property_get as usize,
+        );
         hooks.insert("__errno".to_owned(), __errno_location as usize);
         hooks.insert("close".to_owned(), close as usize);
         hooks.insert("free".to_owned(), free as usize);
@@ -352,7 +405,7 @@ impl LoaderHelpers {
 enum ADIStoreSericesCoreErr {
     InvalidLibraryFormat,
     Misc,
-    MissingLibraries
+    MissingLibraries,
 }
 
 impl std::fmt::Display for ADIStoreSericesCoreErr {
@@ -365,18 +418,21 @@ impl std::error::Error for ADIStoreSericesCoreErr {}
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-    use anyhow::Result;
     use crate::adi_proxy::ADIProxyAnisetteProvider;
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
     use crate::store_services_core::StoreServicesCoreADIProxy;
+    use anyhow::Result;
+    use std::path::PathBuf;
 
     #[test]
     fn fetch_anisette_ssc() -> Result<()> {
         let path = PathBuf::new().join("anisette_test");
-        let proxy= StoreServicesCoreADIProxy::new(&path)?;
+        let proxy = StoreServicesCoreADIProxy::new(&path)?;
         let mut provider = ADIProxyAnisetteProvider::new(proxy, path)?;
-        println!("SSC headers: {:?}", (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?);
+        println!(
+            "SSC headers: {:?}",
+            (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers()?
+        );
         Ok(())
     }
 }
