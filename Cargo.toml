@@ -2,5 +2,6 @@
 members = [
     "omnisette",
     "icloud-auth",
-    "apple-dev-apis"
+    "apple-dev-apis",
+    "apple-codesign-wrapper"
 ]

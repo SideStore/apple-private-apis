@@ -1,0 +1,19 @@
+[package]
+name = "apple-codesign-wrapper"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+paris-log = "1"
+
+plist = { git = "https://github.com/naturecodevoid/rust-plist", version = "1.4.3" }
+ignore = "0.4"
+
+apple-codesign = "0.22"
+
+parking_lot = "0.12"
+
+[dev-dependencies]
+simplelog = "0.12"
