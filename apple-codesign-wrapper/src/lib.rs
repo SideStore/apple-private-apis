@@ -54,6 +54,9 @@ pub fn sign_app(
         ),
     }
 
+    // don't sign embedded.mobileprovision files
+    settings.add_path_exclusion("**/embedded.mobileprovision")?;
+
     let signer = UnifiedSigner::new(settings);
 
     debug!("Signing at {app_path}");
