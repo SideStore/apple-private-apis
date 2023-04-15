@@ -279,6 +279,38 @@ impl dyn ADIProxy {
 
         Ok(())
     }
+
+    #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
+    async fn get_anisette_headers(
+        &mut self,
+        skip_provisioning: bool,
+    ) -> Result<HashMap<String, String>> {
+        if !self.is_machine_provisioned(DS_ID) && !skip_provisioning {
+            self.provision_device().await?;
+        }
+
+        let machine_data = self.request_otp(DS_ID)?;
+
+        let mut headers = HashMap::new();
+        headers.insert(
+            "X-Apple-I-MD".to_string(),
+            base64_engine.encode(machine_data.otp),
+        );
+        headers.insert(
+            "X-Apple-I-MD-M".to_string(),
+            base64_engine.encode(machine_data.mid),
+        );
+        headers.insert("X-Apple-I-MD-RINFO".to_string(), "17106176".to_string());
+        headers.insert("X-Apple-I-MD-LU".to_string(), self.get_local_user_uuid());
+        headers.insert("X-Apple-I-SRL-NO".to_string(), self.get_serial_number());
+        headers.insert(
+            "X-Mme-Client-Info".to_string(),
+            CLIENT_INFO_HEADER.to_string(),
+        );
+        headers.insert("X-Mme-Device-Id".to_string(), self.get_device_identifier());
+
+        Ok(headers)
+    }
 }
 
 pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
@@ -338,40 +370,6 @@ impl<ProxyType: ADIProxy + 'static> AnisetteHeadersProvider
         skip_provisioning: bool,
     ) -> Result<HashMap<String, String>> {
         let adi_proxy = &mut self.adi_proxy as &mut dyn ADIProxy;
-
-        if !adi_proxy.is_machine_provisioned(DS_ID) && !skip_provisioning {
-            adi_proxy.provision_device().await?;
-        }
-
-        let machine_data = adi_proxy.request_otp(DS_ID)?;
-
-        let mut headers = HashMap::new();
-        headers.insert(
-            "X-Apple-I-MD".to_string(),
-            base64_engine.encode(machine_data.otp),
-        );
-        headers.insert(
-            "X-Apple-I-MD-M".to_string(),
-            base64_engine.encode(machine_data.mid),
-        );
-        headers.insert("X-Apple-I-MD-RINFO".to_string(), "17106176".to_string());
-        headers.insert(
-            "X-Apple-I-MD-LU".to_string(),
-            adi_proxy.get_local_user_uuid(),
-        );
-        headers.insert(
-            "X-Apple-I-SRL-NO".to_string(),
-            adi_proxy.get_serial_number(),
-        );
-        headers.insert(
-            "X-Mme-Client-Info".to_string(),
-            CLIENT_INFO_HEADER.to_string(),
-        );
-        headers.insert(
-            "X-Mme-Device-Id".to_string(),
-            adi_proxy.get_device_identifier(),
-        );
-
-        Ok(headers)
+        adi_proxy.get_anisette_headers(skip_provisioning).await
     }
 }
