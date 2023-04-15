@@ -1,3 +1,5 @@
+#[cfg(target_os = "macos")]
+mod posix_macos;
 #[cfg(target_family = "windows")]
 mod posix_windows;
 
@@ -5,6 +7,7 @@ use crate::adi_proxy::{
     ADIError, ADIProxy, ConfigurableADIProxy, RequestOTPData, StartProvisioningData,
     SynchronizeData,
 };
+
 use android_loader::android_library::AndroidLibrary;
 use android_loader::sysv64_type;
 use android_loader::{hook_manager, sysv64};
@@ -348,11 +351,13 @@ struct LoaderHelpers;
 
 use rand::Rng;
 
-#[cfg(target_family = "unix")]
+#[cfg(all(target_family = "unix", not(target_os = "macos")))]
 use libc::{
     chmod, close, free, fstat, ftruncate, gettimeofday, lstat, malloc, mkdir, open, read, strncpy,
     umask, write,
 };
+#[cfg(target_os = "macos")]
+use posix_macos::*;
 
 static mut ERRNO: i32 = 0;
 
@@ -436,7 +441,10 @@ mod tests {
             AnisetteConfiguration::new()
                 .set_configuration_path(PathBuf::new().join("anisette_test")),
         )?;
-        info!("Headers: {:?}", provider.get_authentication_headers()?);
+        info!(
+            "Headers: {:?}",
+            provider.provider.get_authentication_headers()?
+        );
         Ok(())
     }
 
@@ -451,7 +459,7 @@ mod tests {
         )?;
         info!(
             "Headers: {:?}",
-            provider.get_authentication_headers().await?
+            provider.provider.get_authentication_headers().await?
         );
         Ok(())
     }
