@@ -111,7 +111,53 @@ pub trait ADIProxy {
     fn get_local_user_uuid(&self) -> String;
     fn get_device_identifier(&self) -> String;
     fn get_serial_number(&self) -> String;
+}
 
+pub trait ConfigurableADIProxy: ADIProxy {
+    fn set_identifier(&mut self, identifier: &str) -> Result<(), ADIError>;
+    fn set_provisioning_path(&mut self, path: &str) -> Result<(), ADIError>;
+}
+
+pub const AKD_USER_AGENT: &str = "akd/1.0 CFNetwork/808.1.4";
+pub const CLIENT_INFO_HEADER: &str =
+    "<MacBookPro13,2> <macOS;13.1;22C65> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>";
+pub const DS_ID: i64 = -2;
+pub const IDENTIFIER_LENGTH: usize = 16;
+pub type Identifier = [u8; IDENTIFIER_LENGTH];
+
+trait AppleRequestResult {
+    fn check_status(&self) -> Result<()>;
+    fn get_response(&self) -> Result<&Dictionary>;
+}
+
+impl AppleRequestResult for Dictionary {
+    fn check_status(&self) -> Result<()> {
+        let status = self
+            .get("Status")
+            .ok_or(InvalidResponse)?
+            .as_dictionary()
+            .unwrap();
+        let code = status.get("ec").unwrap().as_signed_integer().unwrap();
+        if code != 0 {
+            let description = status.get("em").unwrap().as_string().unwrap().to_string();
+            Err(ProvisioningError::ServerError(ServerError { code, description }).into())
+        } else {
+            Ok(())
+        }
+    }
+
+    fn get_response(&self) -> Result<&Dictionary> {
+        if let Some(response) = self.get("Response") {
+            let response = response.as_dictionary().unwrap();
+            response.check_status()?;
+            Ok(response)
+        } else {
+            Err(InvalidResponse.into())
+        }
+    }
+}
+
+impl dyn ADIProxy {
     fn make_http_client(&mut self) -> Result<Client> {
         let mut headers = HeaderMap::new();
         headers.insert("Content-Type", HeaderValue::from_str("text/x-xml-plist")?);
@@ -267,50 +313,6 @@ pub trait ADIProxy {
     }
 }
 
-pub trait ConfigurableADIProxy: ADIProxy {
-    fn set_identifier(&mut self, identifier: &str) -> Result<(), ADIError>;
-    fn set_provisioning_path(&mut self, path: &str) -> Result<(), ADIError>;
-}
-
-pub const AKD_USER_AGENT: &str = "akd/1.0 CFNetwork/808.1.4";
-pub const CLIENT_INFO_HEADER: &str =
-    "<MacBookPro13,2> <macOS;13.1;22C65> <com.apple.AuthKit/1 (com.apple.dt.Xcode/3594.4.19)>";
-pub const DS_ID: i64 = -2;
-pub const IDENTIFIER_LENGTH: usize = 16;
-pub type Identifier = [u8; IDENTIFIER_LENGTH];
-
-trait AppleRequestResult {
-    fn check_status(&self) -> Result<()>;
-    fn get_response(&self) -> Result<&Dictionary>;
-}
-
-impl AppleRequestResult for Dictionary {
-    fn check_status(&self) -> Result<()> {
-        let status = self
-            .get("Status")
-            .ok_or(InvalidResponse)?
-            .as_dictionary()
-            .unwrap();
-        let code = status.get("ec").unwrap().as_signed_integer().unwrap();
-        if code != 0 {
-            let description = status.get("em").unwrap().as_string().unwrap().to_string();
-            Err(ProvisioningError::ServerError(ServerError { code, description }).into())
-        } else {
-            Ok(())
-        }
-    }
-
-    fn get_response(&self) -> Result<&Dictionary> {
-        if let Some(response) = self.get("Response") {
-            let response = response.as_dictionary().unwrap();
-            response.check_status()?;
-            Ok(response)
-        } else {
-            Err(InvalidResponse.into())
-        }
-    }
-}
-
 pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
     adi_proxy: ProxyType,
 }
@@ -367,6 +369,7 @@ impl<ProxyType: ADIProxy + 'static> AnisetteHeadersProvider
         &mut self,
         skip_provisioning: bool,
     ) -> Result<HashMap<String, String>> {
-        self.adi_proxy.get_anisette_headers(skip_provisioning).await
+        let adi_proxy = &mut self.adi_proxy as &mut dyn ADIProxy;
+        adi_proxy.get_anisette_headers(skip_provisioning).await
     }
 }
