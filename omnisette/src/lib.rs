@@ -149,8 +149,12 @@ impl AnisetteHeaders {
 
 #[cfg(test)]
 mod tests {
-    use log::LevelFilter;
+    use anyhow::Result;
+    use log::{info, LevelFilter};
     use simplelog::{ColorChoice, ConfigBuilder, TermLogger, TerminalMode};
+    use std::path::PathBuf;
+
+    use crate::AnisetteHeaders;
 
     pub fn init_logger() {
         if TermLogger::init(

@@ -67,7 +67,11 @@ pub struct StoreServicesCoreADIProxy<'lt> {
 
 impl StoreServicesCoreADIProxy<'_> {
     pub fn new<'lt>(library_path: &PathBuf) -> Result<StoreServicesCoreADIProxy<'lt>> {
-        // Should be safe is the library is correct.
+        Self::with_custom_provisioning_path(library_path, library_path)
+    }
+
+    pub fn with_custom_provisioning_path<'lt>(library_path: &PathBuf, provisioning_path: &PathBuf) -> Result<StoreServicesCoreADIProxy<'lt>> {
+        // Should be safe if the library is correct.
         unsafe {
             LoaderHelpers::setup_hooks();
 
@@ -160,7 +164,7 @@ impl StoreServicesCoreADIProxy<'_> {
             };
 
             proxy.set_provisioning_path(
-                library_path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?,
+                provisioning_path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?,
             )?;
 
             Ok(proxy)
