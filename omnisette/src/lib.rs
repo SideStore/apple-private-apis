@@ -14,6 +14,9 @@ pub mod adi_proxy;
 pub mod anisette_headers_provider;
 pub mod store_services_core;
 
+#[cfg(feature = "remote-anisette-v3")]
+pub mod remote_anisette_v3;
+
 #[cfg(target_os = "macos")]
 pub mod aos_kit;
 
@@ -40,6 +43,9 @@ impl std::fmt::Display for AnisetteMetaError {
 impl std::error::Error for AnisetteMetaError {}
 
 pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
+
+#[cfg(feature = "remote-anisette-v3")]
+pub const DEFAULT_ANISETTE_URL_V3: &str = "https://ani.sidestore.io";
 
 #[derive(Clone)]
 pub struct AnisetteConfiguration {
