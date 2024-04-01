@@ -1,9 +1,0 @@
-{
-    "rust-analyzer.linkedProjects": [
-        "./omnisette/Cargo.toml",
-        "./omnisette/Cargo.toml"
-    ],
-    "rust-analyzer.cargo.features": [
-        "remote-anisette-v3"
-    ]
-}
