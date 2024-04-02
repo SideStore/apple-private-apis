@@ -386,8 +386,8 @@ impl AppleAccount {
         plist::to_writer_xml(&mut buffer, &packet)?;
         let buffer = String::from_utf8(buffer).unwrap();
 
-        println!("{:?}", gsa_headers.clone());
-        println!("{:?}", buffer);
+        // println!("{:?}", gsa_headers.clone());
+        // println!("{:?}", buffer);
 
         let res = self
             .client
@@ -401,7 +401,7 @@ impl AppleAccount {
         if err_check.is_err() {
             return Err(err_check.err().unwrap());
         }
-        println!("{:?}", res);
+        // println!("{:?}", res);
         let salt = res.get("s").unwrap().as_data().unwrap();
         let b_pub = res.get("B").unwrap().as_data().unwrap();
         let iters = res.get("i").unwrap().as_signed_integer().unwrap();
@@ -454,7 +454,7 @@ impl AppleAccount {
         if err_check.is_err() {
             return Err(err_check.err().unwrap());
         }
-        println!("{:?}", res);
+        // println!("{:?}", res);
         let m2 = res.get("M2").unwrap().as_data().unwrap();
         verifier.verify_server(&m2).unwrap();
 
@@ -551,7 +551,7 @@ impl AppleAccount {
 
     pub async fn verify_2fa(&self, code: String) -> Result<LoginResponse, Error> {
         let headers = self.build_2fa_headers(false);
-        println!("Recieved code: {}", code);
+        // println!("Recieved code: {}", code);
         let res = self
             .client
             .get("https://gsa.apple.com/grandslam/GsService2/validate")
@@ -572,7 +572,7 @@ impl AppleAccount {
 
     pub async fn verify_sms_2fa(&self, code: String, mut body: VerifyBody) -> Result<LoginResponse, Error> {
         let headers = self.build_2fa_headers(true);
-        println!("Recieved code: {}", code);
+        // println!("Recieved code: {}", code);
 
         body.security_code = Some(VerifyCode { code });
 
