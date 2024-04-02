@@ -147,7 +147,6 @@ pub struct AnisetteData {
 impl AnisetteData {
     pub fn get_headers(&self, serial: String) -> HashMap<String, String> {
         let dt: DateTime<Utc> = Utc::now().round_subsecs(0);
-        println!("here {}", dt.format("%+").to_string());
         
         HashMap::from_iter([
             ("X-Apple-I-Client-Time".to_string(), dt.format("%+").to_string().replace("+00:00", "Z")),
