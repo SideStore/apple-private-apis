@@ -6,7 +6,7 @@ use aes::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use hmac::{Hmac, Mac};
 use reqwest::{
-    blocking::{Client, ClientBuilder, Response},
+    Client, ClientBuilder, Response,
     header::{HeaderMap, HeaderName, HeaderValue},
     Certificate,
 };
@@ -123,8 +123,8 @@ pub enum LoginResponse {
 //     }
 // }
 
-fn parse_response(res: Result<Response, reqwest::Error>) -> plist::Dictionary {
-    let res = res.unwrap().text().unwrap();
+async fn parse_response(res: Result<Response, reqwest::Error>) -> plist::Dictionary {
+    let res = res.unwrap().text().await.unwrap();
     println!("{:?}", res);
     let res: plist::Dictionary = plist::from_bytes(res.as_bytes()).unwrap();
     let res: plist::Value = res.get("Response").unwrap().to_owned();
@@ -135,8 +135,8 @@ fn parse_response(res: Result<Response, reqwest::Error>) -> plist::Dictionary {
 }
 
 impl AppleAccount {
-    pub fn new() -> Self {
-        let anisette = AnisetteData::new();
+    pub async fn new() -> Self {
+        let anisette = AnisetteData::new().await;
         Self::new_with_anisette(anisette.unwrap())
     }
 
@@ -155,15 +155,15 @@ impl AppleAccount {
         }
     }
 
-    pub fn login(
+    pub async fn login(
         appleid_closure: impl Fn() -> (String, String),
         tfa_closure: impl Fn() -> String,
     ) -> Result<AppleAccount, Error> {
         let anisette = AnisetteData::new();
-        AppleAccount::login_with_anisette(appleid_closure, tfa_closure, anisette.unwrap())
+        AppleAccount::login_with_anisette(appleid_closure, tfa_closure, anisette.await.unwrap()).await
     }
 
-    pub fn get_app_token(&self, app_name: &str) -> Result<AppToken, Error> {
+    pub async fn get_app_token(&self, app_name: &str) -> Result<AppToken, Error> {
         let spd = self.spd.as_ref().unwrap();
         // println!("spd: {:#?}", spd);
         let dsid = spd.get("adsid").unwrap().as_string().unwrap();
@@ -224,8 +224,8 @@ impl AppleAccount {
             .post(GSA_ENDPOINT)
             .headers(gsa_headers.clone())
             .body(buffer)
-            .send();
-        let res = parse_response(res);
+            .send().await;
+        let res = parse_response(res).await;
         let err_check = Self::check_error(&res);
         if err_check.is_err() {
             return Err(err_check.err().unwrap());
@@ -265,22 +265,22 @@ impl AppleAccount {
     /// ```
     /// Note: You would not provide the 2FA code like this, you would have to actually ask input for it.
     //TODO: add login_with_anisette and login, where login autodetcts anisette
-    pub fn login_with_anisette<F: Fn() -> (String, String), G: Fn() -> String>(
+    pub async fn login_with_anisette<F: Fn() -> (String, String), G: Fn() -> String>(
         appleid_closure: F,
         tfa_closure: G,
         anisette: AnisetteData,
     ) -> Result<AppleAccount, Error> {
         let mut _self = AppleAccount::new_with_anisette(anisette);
         let (username, password) = appleid_closure();
-        let mut response = _self.login_email_pass(username.clone(), password.clone())?;
+        let mut response = _self.login_email_pass(username.clone(), password.clone()).await?;
         loop {
             match response {
-                LoginResponse::NeedsDevice2FA() => response = _self.send_2fa_to_devices().unwrap(),
+                LoginResponse::NeedsDevice2FA() => response = _self.send_2fa_to_devices().await.unwrap(),
                 LoginResponse::Needs2FAVerification() => {
-                    response = _self.verify_2fa(tfa_closure()).unwrap()
+                    response = _self.verify_2fa(tfa_closure()).await.unwrap()
                 }
                 LoginResponse::NeedsLogin() => {
-                    response = _self.login_email_pass(username.clone(), password.clone())?
+                    response = _self.login_email_pass(username.clone(), password.clone()).await?
                 }
                 LoginResponse::LoggedIn(ac) => return Ok(ac),
                 LoginResponse::Failed(e) => return Err(e),
@@ -288,7 +288,7 @@ impl AppleAccount {
         }
     }
 
-    pub fn login_email_pass(
+    pub async fn login_email_pass(
         &mut self,
         username: String,
         password: String,
@@ -340,9 +340,9 @@ impl AppleAccount {
             .post(GSA_ENDPOINT)
             .headers(gsa_headers.clone())
             .body(buffer)
-            .send();
+            .send().await;
 
-        let res = parse_response(res);
+        let res = parse_response(res).await;
         let err_check = Self::check_error(&res);
         if err_check.is_err() {
             return Err(err_check.err().unwrap());
@@ -393,9 +393,9 @@ impl AppleAccount {
             .post(GSA_ENDPOINT)
             .headers(gsa_headers.clone())
             .body(buffer)
-            .send();
+            .send().await;
 
-        let res = parse_response(res);
+        let res = parse_response(res).await;
         let err_check = Self::check_error(&res);
         if err_check.is_err() {
             return Err(err_check.err().unwrap());
@@ -453,14 +453,14 @@ impl AppleAccount {
             .unwrap()
     }
 
-    pub fn send_2fa_to_devices(&self) -> Result<LoginResponse, crate::Error> {
+    pub async fn send_2fa_to_devices(&self) -> Result<LoginResponse, crate::Error> {
         let headers = self.build_2fa_headers();
 
         let res = self
             .client
             .get("https://gsa.apple.com/auth/verify/trusteddevice")
             .headers(headers)
-            .send();
+            .send().await;
 
         if !res.as_ref().unwrap().status().is_success() {
             return Err(Error::AuthSrp);
@@ -468,7 +468,7 @@ impl AppleAccount {
 
         return Ok(LoginResponse::Needs2FAVerification());
     }
-    pub fn verify_2fa(&self, code: String) -> Result<LoginResponse, Error> {
+    pub async fn verify_2fa(&self, code: String) -> Result<LoginResponse, Error> {
         let headers = self.build_2fa_headers();
         println!("Recieved code: {}", code);
         let res = self
@@ -479,10 +479,10 @@ impl AppleAccount {
                 HeaderName::from_str("security-code").unwrap(),
                 HeaderValue::from_str(&code).unwrap(),
             )
-            .send();
+            .send().await;
 
         let res: plist::Dictionary =
-            plist::from_bytes(res.unwrap().text().unwrap().as_bytes()).unwrap();
+            plist::from_bytes(res.unwrap().text().await.unwrap().as_bytes()).unwrap();
 
         let err_check = Self::check_error(&res);
         if err_check.is_err() {
