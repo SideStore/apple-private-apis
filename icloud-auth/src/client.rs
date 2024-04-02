@@ -107,8 +107,28 @@ pub enum LoginResponse {
     // NeedsSMS2FASent(Send2FAToDevices),
     NeedsDevice2FA(),
     Needs2FAVerification(),
+    NeedsSMS2FA(),
+    NeedsSMS2FAVerification(VerifyBody),
     NeedsLogin(),
     Failed(Error),
+}
+
+#[derive(Serialize)]
+struct VerifyCode {
+    code: String,
+}
+
+#[derive(Serialize)]
+struct PhoneNumber {
+    id: u32
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VerifyBody {
+    phone_number: PhoneNumber,
+    mode: String,
+    security_code: Option<VerifyCode>
 }
 
 // impl Send2FAToDevices {
@@ -279,6 +299,12 @@ impl AppleAccount {
                 LoginResponse::Needs2FAVerification() => {
                     response = _self.verify_2fa(tfa_closure()).await.unwrap()
                 }
+                LoginResponse::NeedsSMS2FA() => {
+                    response = _self.send_sms_2fa_to_devices().await.unwrap()
+                }
+                LoginResponse::NeedsSMS2FAVerification(body) => {
+                    response = _self.verify_sms_2fa(tfa_closure(), body).await.unwrap()
+                }
                 LoginResponse::NeedsLogin() => {
                     response = _self.login_email_pass(username.clone(), password.clone()).await?
                 }
@@ -286,6 +312,11 @@ impl AppleAccount {
                 LoginResponse::Failed(e) => return Err(e),
             }
         }
+    }
+
+    pub fn get_pet(&self) -> String {
+        self.spd.as_ref().unwrap().get("t").unwrap().as_dictionary().unwrap().get("com.apple.gs.idms.pet")
+            .unwrap().as_dictionary().unwrap().get("token").unwrap().as_string().unwrap().to_string()
     }
 
     pub async fn login_email_pass(
@@ -410,24 +441,14 @@ impl AppleAccount {
 
         let status = res.get("Status").unwrap().as_dictionary().unwrap();
 
-        let needs2fa = match status.get("au") {
-            Some(plist::Value::String(s)) => {
-                if s == "trustedDeviceSecondaryAuth" {
-                    println!("Trusted device authentication required");
-                    true
-                } else {
-                    println!("Unknown auth value {}", s);
-                    // PHONE AUTH WILL CAUSE ERRORS!
-                    false
-                }
-            }
-            _ => false,
-        };
-
         self.spd = Some(decoded_spd);
 
-        if needs2fa {
-            return Ok(LoginResponse::NeedsDevice2FA());
+        if let Some(plist::Value::String(s)) = status.get("au") {
+            return match s.as_str() {
+                "trustedDeviceSecondaryAuth" => Ok(LoginResponse::NeedsDevice2FA()),
+                "secondaryAuth" => Ok(LoginResponse::NeedsSMS2FA()),
+                _unk => panic!("Unknown auth value {}", _unk)
+            }
         }
 
         Ok(LoginResponse::LoggedIn(self.clone().to_owned()))
@@ -454,7 +475,7 @@ impl AppleAccount {
     }
 
     pub async fn send_2fa_to_devices(&self) -> Result<LoginResponse, crate::Error> {
-        let headers = self.build_2fa_headers();
+        let headers = self.build_2fa_headers(false);
 
         let res = self
             .client
@@ -468,8 +489,33 @@ impl AppleAccount {
 
         return Ok(LoginResponse::Needs2FAVerification());
     }
+
+    pub async fn send_sms_2fa_to_devices(&self) -> Result<LoginResponse, crate::Error> {
+        let headers = self.build_2fa_headers(true);
+
+        let body = VerifyBody {
+            phone_number: PhoneNumber {
+                id: 1
+            },
+            mode: "sms".to_string(),
+            security_code: None
+        };
+
+        let res = self
+            .client
+            .put("https://gsa.apple.com/auth/verify/phone/")
+            .headers(headers)
+            .json(&body)
+            .send().await;
+
+        if !res.as_ref().unwrap().status().is_success() {
+            return Err(Error::AuthSrp);
+        }
+
+        return Ok(LoginResponse::NeedsSMS2FAVerification(body));
+    }
     pub async fn verify_2fa(&self, code: String) -> Result<LoginResponse, Error> {
-        let headers = self.build_2fa_headers();
+        let headers = self.build_2fa_headers(false);
         println!("Recieved code: {}", code);
         let res = self
             .client
@@ -492,6 +538,26 @@ impl AppleAccount {
         Ok(LoginResponse::LoggedIn(self.clone()))
     }
 
+    pub async fn verify_sms_2fa(&self, code: String, mut body: VerifyBody) -> Result<LoginResponse, Error> {
+        let headers = self.build_2fa_headers(true);
+        println!("Recieved code: {}", code);
+
+        body.security_code = Some(VerifyCode { code });
+
+        let res = self
+            .client
+            .post("https://gsa.apple.com/auth/verify/phone/securitycode")
+            .headers(headers)
+            .json(&body)
+            .send().await.unwrap();
+
+        if res.status() != 200 {
+            return Err(Error::AuthSrp);
+        }
+
+        Ok(LoginResponse::LoggedIn(self.clone()))
+    }
+
     fn check_error(res: &plist::Dictionary) -> Result<(), Error> {
         let res = match res.get("Status") {
             Some(plist::Value::Dictionary(d)) => d,
@@ -508,7 +574,7 @@ impl AppleAccount {
         Ok(())
     }
 
-    fn build_2fa_headers(&self) -> HeaderMap {
+    fn build_2fa_headers(&self, sms: bool) -> HeaderMap {
         let spd = self.spd.as_ref().unwrap();
         let dsid = spd.get("adsid").unwrap().as_string().unwrap();
         let token = spd.get("GsIdmsToken").unwrap().as_string().unwrap();
@@ -526,11 +592,13 @@ impl AppleAccount {
                 );
             });
 
-        headers.insert(
-            "Content-Type",
-            HeaderValue::from_str("text/x-xml-plist").unwrap(),
-        );
-        headers.insert("Accept", HeaderValue::from_str("text/x-xml-plist").unwrap());
+        if !sms {
+            headers.insert(
+                "Content-Type",
+                HeaderValue::from_str("text/x-xml-plist").unwrap(),
+            );
+            headers.insert("Accept", HeaderValue::from_str("text/x-xml-plist").unwrap());
+        }
         headers.insert("User-Agent", HeaderValue::from_str("Xcode").unwrap());
         headers.insert("Accept-Language", HeaderValue::from_str("en-us").unwrap());
         headers.append(
