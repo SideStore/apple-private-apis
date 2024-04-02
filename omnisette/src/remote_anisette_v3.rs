@@ -1,10 +1,11 @@
 
 // Implementing the SideStore Anisette v3 protocol
 
-use std::{collections::HashMap, io::Cursor};
+use std::{collections::HashMap, fs, io::Cursor, path::PathBuf};
 
 use anyhow::{anyhow, Result};
 use base64::engine::general_purpose;
+use chrono::{DateTime, SubsecRound, Utc};
 use log::debug;
 use plist::{Data, Dictionary};
 use reqwest::{Client, ClientBuilder, RequestBuilder};
@@ -146,8 +147,14 @@ pub struct AnisetteData {
 
 impl AnisetteData {
     pub fn get_headers(&self) -> HashMap<String, String> {
-        // TODO time headers
+        let dt: DateTime<Utc> = Utc::now().round_subsecs(0);
+        println!("here {}", dt.format("%+").to_string());
+        
         HashMap::from_iter([
+            ("X-Apple-I-Client-Time".to_string(), dt.format("%+").to_string().replace("+00:00", "Z")),
+            ("X-Apple-I-SRL-NO".to_string(), "0".to_string() /* TODO */),
+            ("X-Apple-I-TimeZone".to_string(), "UTC".to_string()),
+            ("X-Apple-Locale".to_string(), "en_US".to_string()),
             ("X-Apple-I-MD-RINFO".to_string(), self.routing_info.clone()),
             ("X-Apple-I-MD-LU".to_string(), self.local_user_id.clone()),
             ("X-Mme-Device-Id".to_string(), self.device_unique_identifier.clone()),
@@ -179,12 +186,16 @@ impl AnisetteClient {
     }
 
     fn build_apple_request(&self, state: &AnisetteState, builder: RequestBuilder) -> RequestBuilder {
-        // TODO time headers
+        let dt: DateTime<Utc> = Utc::now().round_subsecs(0);
+
         builder.header("X-Mme-Client-Info", &self.client_info.client_info)
             .header("User-Agent", &self.client_info.user_agent)
             .header("Content-Type", "text/x-xml-plist")
             .header("X-Apple-I-MD-LU", encode_hex(&state.md_lu()))
             .header("X-Mme-Device-Id", state.device_id())
+            .header("X-Apple-I-Client-Time", dt.format("%+").to_string())
+            .header("X-Apple-I-TimeZone", "UTC")
+            .header("X-Apple-Locale", "en_US")
     }
 
     pub async fn get_headers(&self, state: &AnisetteState) -> Result<AnisetteData> {
@@ -235,7 +246,7 @@ impl AnisetteClient {
                     one_time_password,
                     routing_info,
                     device_description: self.client_info.client_info.clone(),
-                    local_user_id: base64_encode(&state.md_lu()),
+                    local_user_id: encode_hex(&state.md_lu()),
                     device_unique_identifier: state.device_id()
                 })
             }
@@ -353,20 +364,20 @@ impl AnisetteClient {
 
 
 pub struct RemoteAnisetteProviderV3 {
-    client: AnisetteClient,
-    pub state: AnisetteState,
+    client_url: String,
+    client: Option<AnisetteClient>,
+    pub state: Option<AnisetteState>,
+    configuration_path: PathBuf
 }
 
 impl RemoteAnisetteProviderV3 {
-    pub async fn new(url: String, mut state: AnisetteState) -> Result<RemoteAnisetteProviderV3> {
-        let client = AnisetteClient::new(url).await?;
-        if !state.is_provisioned() {
-            client.provision(&mut state).await?;
+    pub fn new(url: String, configuration_path: PathBuf) -> RemoteAnisetteProviderV3 {
+        RemoteAnisetteProviderV3 {
+            client_url: url,
+            client: None,
+            state: None,
+            configuration_path
         }
-        Ok(RemoteAnisetteProviderV3 {
-            client,
-            state
-        })
     }
 }
 
@@ -376,7 +387,41 @@ impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
         &mut self,
         _skip_provisioning: bool,
     ) -> Result<HashMap<String, String>> {
-        let data = self.client.get_headers(&self.state).await?;
+        if self.client.is_none() {
+            self.client = Some(AnisetteClient::new(self.client_url.clone()).await?);
+        }
+        let client = self.client.as_ref().unwrap();
+
+        fs::create_dir_all(&self.configuration_path)?;
+        
+        let config_path = self.configuration_path.join("state.plist");
+        if self.state.is_none() {
+            self.state = Some(if let Ok(text) = plist::from_file(&config_path) {
+                text
+            } else {
+                AnisetteState::new()
+            });
+        }
+
+        let state = self.state.as_mut().unwrap();
+        if !state.is_provisioned() {
+            client.provision(state).await?;
+            plist::to_file_xml(&config_path, state)?;
+        }
+        let data = match client.get_headers(&state).await {
+            Ok(data) => data,
+            Err(err) => {
+                if let Some(message) = err.downcast_ref::<String>() {
+                    // retry provisioning
+                    if message == "AnisetteNotProvisioned" {
+                        state.adi_pb = None;
+                        client.provision(state).await?;
+                        plist::to_file_xml(config_path, state)?;
+                        client.get_headers(&state).await?
+                    } else { panic!() }
+                } else { panic!() }
+            },
+        };
         Ok(data.get_headers())
     }
 }
@@ -384,7 +429,7 @@ impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
 #[cfg(test)]
 mod tests {
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
-    use crate::remote_anisette_v3::{AnisetteState, RemoteAnisetteProviderV3};
+    use crate::remote_anisette_v3::RemoteAnisetteProviderV3;
     use crate::DEFAULT_ANISETTE_URL_V3;
     use anyhow::Result;
     use log::info;
@@ -393,7 +438,7 @@ mod tests {
     async fn fetch_anisette_remote_v3() -> Result<()> {
         crate::tests::init_logger();
 
-        let mut provider = RemoteAnisetteProviderV3::new(DEFAULT_ANISETTE_URL_V3.to_string(), AnisetteState::new()).await?;
+        let mut provider = RemoteAnisetteProviderV3::new(DEFAULT_ANISETTE_URL_V3.to_string(), "anisette_test".into());
         info!(
             "Remote headers: {:?}",
             (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers().await?

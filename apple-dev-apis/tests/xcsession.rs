@@ -3,8 +3,8 @@ mod tests {
     use apple_dev_apis::XcodeSession;
     use icloud_auth::*;
 
-    #[test]
-    fn xcsession_test() {
+    #[tokio::test]
+    async fn xcsession_test() {
         println!("gsa auth test");
 
         let email = std::env::var("apple_email").unwrap_or_else(|_| {
@@ -29,7 +29,7 @@ mod tests {
             std::io::stdin().read_line(&mut input).unwrap();
             input.trim().to_string()
         };
-        let acc = AppleAccount::login(appleid_closure, tfa_closure);
+        let acc = AppleAccount::login(appleid_closure, tfa_closure).await;
         let session = XcodeSession::with(&acc.unwrap());
     }
 }

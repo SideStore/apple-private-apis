@@ -6,6 +6,7 @@
 
 use crate::adi_proxy::{ADIProxyAnisetteProvider, ConfigurableADIProxy};
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
+use crate::remote_anisette_v3::AnisetteState;
 use anyhow::Result;
 use std::fmt::Formatter;
 use std::path::PathBuf;
@@ -44,12 +45,12 @@ impl std::error::Error for AnisetteMetaError {}
 
 pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
-#[cfg(feature = "remote-anisette-v3")]
 pub const DEFAULT_ANISETTE_URL_V3: &str = "https://ani.sidestore.io";
 
 #[derive(Clone)]
 pub struct AnisetteConfiguration {
     anisette_url: String,
+    anisette_url_v3: String,
     configuration_path: PathBuf,
 }
 
@@ -63,6 +64,7 @@ impl AnisetteConfiguration {
     pub fn new() -> AnisetteConfiguration {
         AnisetteConfiguration {
             anisette_url: DEFAULT_ANISETTE_URL.to_string(),
+            anisette_url_v3: DEFAULT_ANISETTE_URL_V3.to_string(),
             configuration_path: PathBuf::new(),
         }
     }
@@ -127,6 +129,11 @@ impl AnisetteHeaders {
         {
             return Ok(ssc_anisette_headers_provider);
         }
+
+        #[cfg(feature = "remote-anisette-v3")]
+        return Ok(AnisetteHeadersProviderRes::remote(Box::new(
+            remote_anisette_v3::RemoteAnisetteProviderV3::new(configuration.anisette_url_v3, configuration.configuration_path.clone()),
+        )));
 
         #[cfg(feature = "remote-anisette")]
         return Ok(AnisetteHeadersProviderRes::remote(Box::new(

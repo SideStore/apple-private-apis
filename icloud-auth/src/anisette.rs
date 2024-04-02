@@ -9,13 +9,13 @@ pub struct AnisetteData {
 
 impl AnisetteData {
     /// Fetches the data at an anisette server
-    pub fn new() -> Result<Self, crate::Error> {
+    pub async fn new() -> Result<Self, crate::Error> {
         let base_headers = match AnisetteHeaders::get_anisette_headers_provider(
             AnisetteConfiguration::new()
                 .set_configuration_path(PathBuf::new().join("anisette_test"))
-                .set_anisette_url("https://ani.f1sh.me".to_string()),
+                .set_anisette_url("https://ani.sidestore.io/".to_string()),
         ) {
-            Ok(mut b) => match b.get_authentication_headers() {
+            Ok(mut b) => match b.provider.get_authentication_headers().await {
                 Ok(b) => b,
                 Err(_) => return Err(Error::ErrorGettingAnisette),
             },
@@ -34,6 +34,7 @@ impl AnisetteData {
         app_info: bool,
     ) -> HashMap<String, String> {
         let mut headers = self.base_headers.clone();
+        println!("headers {:?}", headers);
         let old_client_info = headers.remove("X-Mme-Client-Info");
         if client_info {
             let client_info = match old_client_info {
