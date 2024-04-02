@@ -110,6 +110,7 @@ pub enum LoginResponse {
     Needs2FAVerification(),
     NeedsSMS2FA(),
     NeedsSMS2FAVerification(VerifyBody),
+    NeedsExtraStep(String),
     NeedsLogin(),
     Failed(Error),
 }
@@ -130,6 +131,27 @@ pub struct VerifyBody {
     phone_number: PhoneNumber,
     mode: String,
     security_code: Option<VerifyCode>
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrustedPhoneNumber {
+    pub number_with_dial_code: String,
+    pub last_two_digits: String,
+    pub push_mode: String,
+    pub id: u32
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthenticationExtras {
+    pub trusted_phone_numbers: Vec<TrustedPhoneNumber>,
+    pub recovery_url: Option<String>,
+    pub cant_use_phone_number_url: Option<String>,
+    pub dont_have_access_url: Option<String>,
+    pub recovery_web_url: Option<String>,
+    pub repair_phone_number_url: Option<String>,
+    pub repair_phone_number_web_url: Option<String>,
 }
 
 // impl Send2FAToDevices {
@@ -302,7 +324,7 @@ impl AppleAccount {
                     response = _self.verify_2fa(tfa_closure()).await.unwrap()
                 }
                 LoginResponse::NeedsSMS2FA() => {
-                    response = _self.send_sms_2fa_to_devices().await.unwrap()
+                    response = _self.send_sms_2fa_to_devices(1).await.unwrap()
                 }
                 LoginResponse::NeedsSMS2FAVerification(body) => {
                     response = _self.verify_sms_2fa(tfa_closure(), body).await.unwrap()
@@ -312,6 +334,7 @@ impl AppleAccount {
                 }
                 LoginResponse::LoggedIn(ac) => return Ok(ac),
                 LoginResponse::Failed(e) => return Err(e),
+                LoginResponse::NeedsExtraStep(step) => return Err(Error::ExtraStep(step))
             }
         }
     }
@@ -449,7 +472,7 @@ impl AppleAccount {
             return match s.as_str() {
                 "trustedDeviceSecondaryAuth" => Ok(LoginResponse::NeedsDevice2FA()),
                 "secondaryAuth" => Ok(LoginResponse::NeedsSMS2FA()),
-                _unk => panic!("Unknown auth value {}", _unk)
+                _unk => Ok(LoginResponse::NeedsExtraStep(_unk.to_string()))
             }
         }
 
@@ -492,12 +515,12 @@ impl AppleAccount {
         return Ok(LoginResponse::Needs2FAVerification());
     }
 
-    pub async fn send_sms_2fa_to_devices(&self) -> Result<LoginResponse, crate::Error> {
+    pub async fn send_sms_2fa_to_devices(&self, phone_id: u32) -> Result<LoginResponse, crate::Error> {
         let headers = self.build_2fa_headers(true);
 
         let body = VerifyBody {
             phone_number: PhoneNumber {
-                id: 1
+                id: phone_id
             },
             mode: "sms".to_string(),
             security_code: None
@@ -516,6 +539,18 @@ impl AppleAccount {
 
         return Ok(LoginResponse::NeedsSMS2FAVerification(body));
     }
+
+    pub async fn get_auth_extras(&self) -> Result<AuthenticationExtras, Error> {
+        let headers = self.build_2fa_headers(true);
+
+        Ok(self.client
+            .get("https://gsa.apple.com/auth")
+            .headers(headers)
+            .header("Accept", "application/json")
+            .send().await.unwrap()
+            .json::<AuthenticationExtras>().await.unwrap())
+    }
+
     pub async fn verify_2fa(&self, code: String) -> Result<LoginResponse, Error> {
         let headers = self.build_2fa_headers(false);
         println!("Recieved code: {}", code);
@@ -576,7 +611,7 @@ impl AppleAccount {
         Ok(())
     }
 
-    fn build_2fa_headers(&self, sms: bool) -> HeaderMap {
+    pub fn build_2fa_headers(&self, sms: bool) -> HeaderMap {
         let spd = self.spd.as_ref().unwrap();
         let dsid = spd.get("adsid").unwrap().as_string().unwrap();
         let token = spd.get("GsIdmsToken").unwrap().as_string().unwrap();

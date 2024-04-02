@@ -8,4 +8,5 @@ pub enum Error {
     ErrorGettingAnisette,
     AuthSrp,
     AuthSrpWithMessage(i64, String),
+    ExtraStep(String),
 }
