@@ -29,17 +29,8 @@ mod tests {
         };
         let acc = AppleAccount::login(appleid_closure, tfa_closure).await;
 
-        println!("here");
-        return;
         let account = acc.unwrap();
-        let spd_plist = account.clone().spd.unwrap();
-        // turn plist::dictonary into json
-        let spd_json = serde_json::to_string(&spd_plist).unwrap();
-
-        println!("{:?}", spd_json);
-
-        let auth_token = account.clone().get_app_token("com.apple.gs.xcode.auth").await;
-        println!("auth_token: {:?}", auth_token.unwrap().auth_token);
-        println!("gsa auth test done");
+        println!("PET: {}", account.get_pet());
+        return;
     }
 }
