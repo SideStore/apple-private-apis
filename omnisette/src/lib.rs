@@ -6,10 +6,11 @@
 
 use crate::adi_proxy::{ADIProxyAnisetteProvider, ConfigurableADIProxy};
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
-use crate::remote_anisette_v3::AnisetteState;
-use anyhow::Result;
 use std::fmt::Formatter;
+use std::io;
 use std::path::PathBuf;
+use adi_proxy::ADIError;
+use thiserror::Error;
 
 pub mod adi_proxy;
 pub mod anisette_headers_provider;
@@ -28,20 +29,31 @@ pub mod remote_anisette;
 pub struct AnisetteHeaders;
 
 #[allow(dead_code)]
-#[derive(Debug)]
-enum AnisetteMetaError {
+#[derive(Debug, Error)]
+pub enum AnisetteError {
     #[allow(dead_code)]
     UnsupportedDevice,
     InvalidArgument(String),
+    AnisetteNotProvisioned,
+    PlistError(#[from] plist::Error),
+    ReqwestError(#[from] reqwest::Error),
+    #[cfg(feature = "remote-anisette-v3")]
+    WsError(#[from] tokio_tungstenite::tungstenite::error::Error),
+    #[cfg(feature = "remote-anisette-v3")]
+    SerdeError(#[from] serde_json::Error),
+    IOError(#[from] io::Error),
+    ADIError(#[from] ADIError),
+    InvalidLibraryFormat,
+    Misc,
+    MissingLibraries,
+    Anyhow(#[from] anyhow::Error)
 }
 
-impl std::fmt::Display for AnisetteMetaError {
+impl std::fmt::Display for AnisetteError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "AnisetteMetaError::{self:?}")
     }
 }
-
-impl std::error::Error for AnisetteMetaError {}
 
 pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
 
@@ -124,7 +136,7 @@ impl AnisetteHeadersProviderRes {
 impl AnisetteHeaders {
     pub fn get_anisette_headers_provider(
         configuration: AnisetteConfiguration,
-    ) -> Result<AnisetteHeadersProviderRes> {
+    ) -> Result<AnisetteHeadersProviderRes, AnisetteError> {
         #[cfg(target_os = "macos")]
         if let Ok(prov) = aos_kit::AOSKitAnisetteProvider::new() {
             return Ok(AnisetteHeadersProviderRes::local(Box::new(prov)));
@@ -153,13 +165,13 @@ impl AnisetteHeaders {
 
     pub fn get_ssc_anisette_headers_provider(
         configuration: AnisetteConfiguration,
-    ) -> Result<AnisetteHeadersProviderRes> {
+    ) -> Result<AnisetteHeadersProviderRes, AnisetteError> {
         let mut ssc_adi_proxy = store_services_core::StoreServicesCoreADIProxy::new(
             configuration.configuration_path(),
         )?;
         let config_path = configuration.configuration_path();
         ssc_adi_proxy.set_provisioning_path(config_path.to_str().ok_or(
-            AnisetteMetaError::InvalidArgument("configuration.configuration_path".to_string()),
+            AnisetteError::InvalidArgument("configuration.configuration_path".to_string()),
         )?)?;
         Ok(AnisetteHeadersProviderRes::local(Box::new(
             ADIProxyAnisetteProvider::new(ssc_adi_proxy, config_path.to_path_buf())?,
@@ -169,7 +181,6 @@ impl AnisetteHeaders {
 
 #[cfg(test)]
 mod tests {
-    use anyhow::Result;
     use log::LevelFilter;
     use simplelog::{ColorChoice, ConfigBuilder, TermLogger, TerminalMode};
 

@@ -10,7 +10,6 @@ default = ["remote-anisette", "dep:remove-async-await"]
 remote-anisette-v3 = ["async", "dep:serde", "dep:serde_json", "dep:tokio-tungstenite", "dep:futures-util", "dep:chrono"]
 
 [dependencies]
-anyhow = "1.0"
 base64 = "0.21"
 hex = "0.4"
 plist = "1.4"
@@ -28,6 +27,8 @@ serde_json = { version = "1.0.115", optional = true }
 tokio-tungstenite = { version = "0.20.1", optional = true, features = ["rustls-tls-native-roots"] }
 futures-util = { version = "0.3.28", optional = true }
 chrono = { version = "0.4.37", optional = true }
+thiserror = "1.0.58"
+anyhow = "1.0.81"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 dlopen2 = "0.4"

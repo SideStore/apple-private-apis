@@ -1,6 +1,6 @@
 use crate::adi_proxy::ProvisioningError::InvalidResponse;
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
-use anyhow::Result;
+use crate::AnisetteError;
 use base64::engine::general_purpose::STANDARD as base64_engine;
 use base64::Engine;
 use log::debug;
@@ -8,15 +8,15 @@ use plist::{Dictionary, Value};
 use rand::RngCore;
 #[cfg(not(feature = "async"))]
 use reqwest::blocking::{Client, ClientBuilder, Response};
-use reqwest::header::{HeaderMap, HeaderValue};
+use reqwest::header::{HeaderMap, HeaderValue, InvalidHeaderValue};
 #[cfg(feature = "async")]
 use reqwest::{Client, ClientBuilder, Response};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::error::Error;
 use std::fmt::{Display, Formatter};
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::path::PathBuf;
+use thiserror::Error;
 
 #[derive(Debug)]
 pub struct ServerError {
@@ -38,10 +38,15 @@ impl std::fmt::Display for ProvisioningError {
 
 impl std::error::Error for ProvisioningError {}
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ADIError {
     Unknown(i32),
-    ProvisioningError(ProvisioningError),
+    ProvisioningError(#[from] ProvisioningError),
+    PlistError(#[from] plist::Error),
+    ReqwestError(#[from] reqwest::Error),
+    Base64Error(#[from] base64::DecodeError),
+    InvalidHeaderValue(#[from] InvalidHeaderValue),
+    IOError(#[from] io::Error)
 }
 
 impl ADIError {
@@ -53,13 +58,13 @@ impl ADIError {
 #[cfg_attr(feature = "async", async_trait::async_trait)]
 trait ToPlist {
     #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
-    async fn plist(self) -> Result<Dictionary>;
+    async fn plist(self) -> Result<Dictionary, ADIError>;
 }
 
 #[cfg_attr(feature = "async", async_trait::async_trait)]
 impl ToPlist for Response {
     #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
-    async fn plist(self) -> Result<Dictionary> {
+    async fn plist(self) -> Result<Dictionary, ADIError> {
         if let Ok(property_list) = Value::from_reader_xml(&*self.bytes().await?) {
             Ok(property_list.as_dictionary().unwrap().to_owned())
         } else {
@@ -73,8 +78,6 @@ impl Display for ADIError {
         write!(f, "{self:?}")
     }
 }
-
-impl Error for ADIError {}
 
 pub struct SynchronizeData {
     pub mid: Vec<u8>,
@@ -106,7 +109,7 @@ pub trait ADIProxy {
     fn request_otp(&self, ds_id: i64) -> Result<RequestOTPData, ADIError>;
 
     fn set_local_user_uuid(&mut self, local_user_uuid: String);
-    fn set_device_identifier(&mut self, device_identifier: String) -> Result<()>;
+    fn set_device_identifier(&mut self, device_identifier: String) -> Result<(), ADIError>;
 
     fn get_local_user_uuid(&self) -> String;
     fn get_device_identifier(&self) -> String;
@@ -126,12 +129,12 @@ pub const IDENTIFIER_LENGTH: usize = 16;
 pub type Identifier = [u8; IDENTIFIER_LENGTH];
 
 trait AppleRequestResult {
-    fn check_status(&self) -> Result<()>;
-    fn get_response(&self) -> Result<&Dictionary>;
+    fn check_status(&self) -> Result<(), ADIError>;
+    fn get_response(&self) -> Result<&Dictionary, ADIError>;
 }
 
 impl AppleRequestResult for Dictionary {
-    fn check_status(&self) -> Result<()> {
+    fn check_status(&self) -> Result<(), ADIError> {
         let status = self
             .get("Status")
             .ok_or(InvalidResponse)?
@@ -146,7 +149,7 @@ impl AppleRequestResult for Dictionary {
         }
     }
 
-    fn get_response(&self) -> Result<&Dictionary> {
+    fn get_response(&self) -> Result<&Dictionary, ADIError> {
         if let Some(response) = self.get("Response") {
             let response = response.as_dictionary().unwrap();
             response.check_status()?;
@@ -158,7 +161,7 @@ impl AppleRequestResult for Dictionary {
 }
 
 impl dyn ADIProxy {
-    fn make_http_client(&mut self) -> Result<Client> {
+    fn make_http_client(&mut self) -> Result<Client, ADIError> {
         let mut headers = HeaderMap::new();
         headers.insert("Content-Type", HeaderValue::from_str("text/x-xml-plist")?);
 
@@ -192,7 +195,7 @@ impl dyn ADIProxy {
     }
 
     #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
-    async fn provision_device(&mut self) -> Result<()> {
+    async fn provision_device(&mut self) -> Result<(), ADIError> {
         let client = self.make_http_client()?;
 
         let url_bag_res = client
@@ -288,14 +291,14 @@ pub struct ADIProxyAnisetteProvider<ProxyType: ADIProxy + 'static> {
 
 impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
     /// If you use this method, you are expected to set the identifier yourself.
-    pub fn without_identifier(adi_proxy: ProxyType) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
+    pub fn without_identifier(adi_proxy: ProxyType) -> Result<ADIProxyAnisetteProvider<ProxyType>, ADIError> {
         Ok(ADIProxyAnisetteProvider { adi_proxy })
     }
 
     pub fn new(
         mut adi_proxy: ProxyType,
         configuration_path: PathBuf,
-    ) -> Result<ADIProxyAnisetteProvider<ProxyType>> {
+    ) -> Result<ADIProxyAnisetteProvider<ProxyType>, ADIError> {
         let identifier_file_path = configuration_path.join("identifier");
         let mut identifier_file = std::fs::OpenOptions::new()
             .create(true)
@@ -337,7 +340,7 @@ impl<ProxyType: ADIProxy + 'static> AnisetteHeadersProvider
     async fn get_anisette_headers(
         &mut self,
         skip_provisioning: bool,
-    ) -> Result<HashMap<String, String>> {
+    ) -> Result<HashMap<String, String>, AnisetteError> {
         let adi_proxy = &mut self.adi_proxy as &mut dyn ADIProxy;
 
         if !adi_proxy.is_machine_provisioned(DS_ID) && !skip_provisioning {

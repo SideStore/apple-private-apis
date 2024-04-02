@@ -3,7 +3,6 @@
 
 use std::{collections::HashMap, fs, io::Cursor, path::PathBuf};
 
-use anyhow::{anyhow, Result};
 use base64::engine::general_purpose;
 use chrono::{DateTime, SubsecRound, Utc};
 use log::debug;
@@ -19,7 +18,7 @@ use std::fmt::Write;
 use base64::Engine;
 use async_trait::async_trait;
 
-use crate::anisette_headers_provider::AnisetteHeadersProvider;
+use crate::{anisette_headers_provider::AnisetteHeadersProvider, AnisetteError};
 
 
 fn plist_to_string<T: serde::Serialize>(value: &T) -> Result<String, plist::Error> {
@@ -165,7 +164,7 @@ impl AnisetteData {
     }
 }
 
-fn make_reqwest() -> Result<Client> {
+fn make_reqwest() -> Result<Client, AnisetteError> {
     Ok(ClientBuilder::new()
         .http1_title_case_headers()
         .danger_accept_invalid_certs(true) // TODO: pin the apple certificate
@@ -173,7 +172,7 @@ fn make_reqwest() -> Result<Client> {
 }
 
 impl AnisetteClient {
-    pub async fn new(url: String) -> Result<AnisetteClient> {
+    pub async fn new(url: String) -> Result<AnisetteClient, AnisetteError> {
         let path = format!("{}/v3/client_info", url);
         let http_client = make_reqwest()?;
         let client_info = http_client.get(path)
@@ -198,7 +197,7 @@ impl AnisetteClient {
             .header("X-Apple-Locale", "en_US")
     }
 
-    pub async fn get_headers(&self, state: &AnisetteState) -> Result<AnisetteData> {
+    pub async fn get_headers(&self, state: &AnisetteState) -> Result<AnisetteData, AnisetteError> {
         let path = format!("{}/v3/get_headers", self.url);
         let http_client = make_reqwest()?;
 
@@ -209,7 +208,7 @@ impl AnisetteClient {
         }
         let body = GetHeadersBody {
             identifier: base64_encode(&state.keychain_identifier),
-            adi_pb: base64_encode(state.adi_pb.as_ref().ok_or(anyhow!("AnisetteNotProvisioned"))?),
+            adi_pb: base64_encode(state.adi_pb.as_ref().ok_or(AnisetteError::AnisetteNotProvisioned)?),
         };
 
         #[derive(Deserialize)]
@@ -235,7 +234,7 @@ impl AnisetteClient {
         match headers {
             AnisetteHeaders::GetHeadersError { message } => {
                 if message.contains("-45061") {
-                    Err(anyhow!("AnisetteNotProvisioned"))
+                    Err(AnisetteError::AnisetteNotProvisioned)
                 } else {
                     panic!("Unknown error {}", message)
                 }
@@ -253,7 +252,7 @@ impl AnisetteClient {
         }
     }
 
-    pub async fn provision(&self, state: &mut AnisetteState) -> Result<()> {
+    pub async fn provision(&self, state: &mut AnisetteState) -> Result<(), AnisetteError> {
         debug!("Provisioning Anisette");
         let http_client = make_reqwest()?;
         let resp = self.build_apple_request(&state, http_client.get("https://gsa.apple.com/grandslam/GsService2/lookup"))
@@ -388,7 +387,7 @@ impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
     async fn get_anisette_headers(
         &mut self,
         _skip_provisioning: bool,
-    ) -> Result<HashMap<String, String>> {
+    ) -> Result<HashMap<String, String>, AnisetteError> {
         if self.client.is_none() {
             self.client = Some(AnisetteClient::new(self.client_url.clone()).await?);
         }
@@ -413,14 +412,11 @@ impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
         let data = match client.get_headers(&state).await {
             Ok(data) => data,
             Err(err) => {
-                if let Some(message) = err.downcast_ref::<String>() {
-                    // retry provisioning
-                    if message == "AnisetteNotProvisioned" {
-                        state.adi_pb = None;
-                        client.provision(state).await?;
-                        plist::to_file_xml(config_path, state)?;
-                        client.get_headers(&state).await?
-                    } else { panic!() }
+                if matches!(err, AnisetteError::AnisetteNotProvisioned) {
+                    state.adi_pb = None;
+                    client.provision(state).await?;
+                    plist::to_file_xml(config_path, state)?;
+                    client.get_headers(&state).await?
                 } else { panic!() }
             },
         };
@@ -432,12 +428,11 @@ impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
 mod tests {
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
     use crate::remote_anisette_v3::RemoteAnisetteProviderV3;
-    use crate::DEFAULT_ANISETTE_URL_V3;
-    use anyhow::Result;
+    use crate::{AnisetteError, DEFAULT_ANISETTE_URL_V3};
     use log::info;
 
     #[tokio::test]
-    async fn fetch_anisette_remote_v3() -> Result<()> {
+    async fn fetch_anisette_remote_v3() -> Result<(), AnisetteError> {
         crate::tests::init_logger();
 
         let mut provider = RemoteAnisetteProviderV3::new(DEFAULT_ANISETTE_URL_V3.to_string(), "anisette_test".into(), "0".to_string());

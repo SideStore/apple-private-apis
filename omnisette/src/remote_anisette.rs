@@ -1,5 +1,4 @@
-use crate::anisette_headers_provider::AnisetteHeadersProvider;
-use anyhow::Result;
+use crate::{anisette_headers_provider::AnisetteHeadersProvider, AnisetteError};
 #[cfg(not(feature = "async"))]
 use reqwest::blocking::get;
 #[cfg(feature = "async")]
@@ -22,7 +21,7 @@ impl AnisetteHeadersProvider for RemoteAnisetteProvider {
     async fn get_anisette_headers(
         &mut self,
         _skip_provisioning: bool,
-    ) -> Result<HashMap<String, String>> {
+    ) -> Result<HashMap<String, String>, AnisetteError> {
         Ok(get(&self.url).await?.json().await?)
     }
 }
@@ -32,11 +31,10 @@ mod tests {
     use crate::anisette_headers_provider::AnisetteHeadersProvider;
     use crate::remote_anisette::RemoteAnisetteProvider;
     use crate::DEFAULT_ANISETTE_URL;
-    use anyhow::Result;
     use log::info;
 
     #[test]
-    fn fetch_anisette_remote() -> Result<()> {
+    fn fetch_anisette_remote() -> Result<(), AnisetteError> {
         crate::tests::init_logger();
 
         let mut provider = RemoteAnisetteProvider::new(DEFAULT_ANISETTE_URL.to_string());
