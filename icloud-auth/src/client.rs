@@ -5,6 +5,7 @@ use crate::{anisette::AnisetteData, Error};
 use aes::cipher::block_padding::Pkcs7;
 use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use hmac::{Hmac, Mac};
+use omnisette::AnisetteConfiguration;
 use reqwest::{
     Client, ClientBuilder, Response,
     header::{HeaderMap, HeaderName, HeaderValue},
@@ -155,8 +156,8 @@ async fn parse_response(res: Result<Response, reqwest::Error>) -> plist::Diction
 }
 
 impl AppleAccount {
-    pub async fn new() -> Self {
-        let anisette = AnisetteData::new().await;
+    pub async fn new(config: AnisetteConfiguration) -> Self {
+        let anisette = AnisetteData::new(config).await;
         Self::new_with_anisette(anisette.unwrap())
     }
 
@@ -178,8 +179,9 @@ impl AppleAccount {
     pub async fn login(
         appleid_closure: impl Fn() -> (String, String),
         tfa_closure: impl Fn() -> String,
+        config: AnisetteConfiguration,
     ) -> Result<AppleAccount, Error> {
-        let anisette = AnisetteData::new();
+        let anisette = AnisetteData::new(config);
         AppleAccount::login_with_anisette(appleid_closure, tfa_closure, anisette.await.unwrap()).await
     }
 
@@ -554,6 +556,8 @@ impl AppleAccount {
         if res.status() != 200 {
             return Err(Error::AuthSrp);
         }
+
+        println!("res {}", res.text().await.unwrap());
 
         Ok(LoginResponse::LoggedIn(self.clone()))
     }

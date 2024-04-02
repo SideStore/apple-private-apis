@@ -52,6 +52,7 @@ pub struct AnisetteConfiguration {
     anisette_url: String,
     anisette_url_v3: String,
     configuration_path: PathBuf,
+    macos_serial: String,
 }
 
 impl Default for AnisetteConfiguration {
@@ -66,6 +67,7 @@ impl AnisetteConfiguration {
             anisette_url: DEFAULT_ANISETTE_URL.to_string(),
             anisette_url_v3: DEFAULT_ANISETTE_URL_V3.to_string(),
             configuration_path: PathBuf::new(),
+            macos_serial: "0".to_string()
         }
     }
 
@@ -79,6 +81,11 @@ impl AnisetteConfiguration {
 
     pub fn set_anisette_url(mut self, anisette_url: String) -> AnisetteConfiguration {
         self.anisette_url = anisette_url;
+        self
+    }
+
+    pub fn set_macos_serial(mut self, macos_serial: String) -> AnisetteConfiguration {
+        self.macos_serial = macos_serial;
         self
     }
 
@@ -132,7 +139,7 @@ impl AnisetteHeaders {
 
         #[cfg(feature = "remote-anisette-v3")]
         return Ok(AnisetteHeadersProviderRes::remote(Box::new(
-            remote_anisette_v3::RemoteAnisetteProviderV3::new(configuration.anisette_url_v3, configuration.configuration_path.clone()),
+            remote_anisette_v3::RemoteAnisetteProviderV3::new(configuration.anisette_url_v3, configuration.configuration_path.clone(), configuration.macos_serial.clone()),
         )));
 
         #[cfg(feature = "remote-anisette")]

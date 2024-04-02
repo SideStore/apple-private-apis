@@ -1,6 +1,9 @@
 #[cfg(test)]
 mod tests {
+    use std::{path::PathBuf, str::FromStr};
+
     use icloud_auth::*;
+    use omnisette::AnisetteConfiguration;
 
     #[tokio::test]
     async fn gsa_auth() {
@@ -27,7 +30,8 @@ mod tests {
             std::io::stdin().read_line(&mut input).unwrap();
             input.trim().to_string()
         };
-        let acc = AppleAccount::login(appleid_closure, tfa_closure).await;
+        let acc = AppleAccount::login(appleid_closure, tfa_closure, AnisetteConfiguration::new()
+            .set_configuration_path(PathBuf::from_str("anisette_test").unwrap())).await;
 
         let account = acc.unwrap();
         println!("PET: {}", account.get_pet());
