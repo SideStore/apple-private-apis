@@ -537,7 +537,7 @@ impl AppleAccount {
             return Err(err_check.err().unwrap());
         }
 
-        Ok(LoginResponse::LoggedIn(self.clone()))
+        Ok(LoginResponse::NeedsLogin())
     }
 
     pub async fn verify_sms_2fa(&self, code: String, mut body: VerifyBody) -> Result<LoginResponse, Error> {
@@ -557,9 +557,7 @@ impl AppleAccount {
             return Err(Error::AuthSrp);
         }
 
-        println!("res {}", res.text().await.unwrap());
-
-        Ok(LoginResponse::LoggedIn(self.clone()))
+        Ok(LoginResponse::NeedsLogin())
     }
 
     fn check_error(res: &plist::Dictionary) -> Result<(), Error> {
