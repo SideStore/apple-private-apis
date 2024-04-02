@@ -9,12 +9,8 @@ pub struct AnisetteData {
 
 impl AnisetteData {
     /// Fetches the data at an anisette server
-    pub async fn new() -> Result<Self, crate::Error> {
-        let base_headers = match AnisetteHeaders::get_anisette_headers_provider(
-            AnisetteConfiguration::new()
-                .set_configuration_path(PathBuf::new().join("anisette_test"))
-                .set_anisette_url("https://ani.sidestore.io/".to_string()),
-        ) {
+    pub async fn new(config: AnisetteConfiguration) -> Result<Self, crate::Error> {
+        let base_headers = match AnisetteHeaders::get_anisette_headers_provider(config) {
             Ok(mut b) => match b.provider.get_authentication_headers().await {
                 Ok(b) => b,
                 Err(_) => return Err(Error::ErrorGettingAnisette),

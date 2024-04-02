@@ -146,13 +146,13 @@ pub struct AnisetteData {
 }
 
 impl AnisetteData {
-    pub fn get_headers(&self) -> HashMap<String, String> {
+    pub fn get_headers(&self, serial: String) -> HashMap<String, String> {
         let dt: DateTime<Utc> = Utc::now().round_subsecs(0);
         println!("here {}", dt.format("%+").to_string());
         
         HashMap::from_iter([
             ("X-Apple-I-Client-Time".to_string(), dt.format("%+").to_string().replace("+00:00", "Z")),
-            ("X-Apple-I-SRL-NO".to_string(), "0".to_string() /* TODO */),
+            ("X-Apple-I-SRL-NO".to_string(), serial),
             ("X-Apple-I-TimeZone".to_string(), "UTC".to_string()),
             ("X-Apple-Locale".to_string(), "en_US".to_string()),
             ("X-Apple-I-MD-RINFO".to_string(), self.routing_info.clone()),
@@ -367,16 +367,18 @@ pub struct RemoteAnisetteProviderV3 {
     client_url: String,
     client: Option<AnisetteClient>,
     pub state: Option<AnisetteState>,
-    configuration_path: PathBuf
+    configuration_path: PathBuf,
+    serial: String
 }
 
 impl RemoteAnisetteProviderV3 {
-    pub fn new(url: String, configuration_path: PathBuf) -> RemoteAnisetteProviderV3 {
+    pub fn new(url: String, configuration_path: PathBuf, serial: String) -> RemoteAnisetteProviderV3 {
         RemoteAnisetteProviderV3 {
             client_url: url,
             client: None,
             state: None,
-            configuration_path
+            configuration_path,
+            serial
         }
     }
 }
@@ -422,7 +424,7 @@ impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
                 } else { panic!() }
             },
         };
-        Ok(data.get_headers())
+        Ok(data.get_headers(self.serial.clone()))
     }
 }
 
@@ -438,7 +440,7 @@ mod tests {
     async fn fetch_anisette_remote_v3() -> Result<()> {
         crate::tests::init_logger();
 
-        let mut provider = RemoteAnisetteProviderV3::new(DEFAULT_ANISETTE_URL_V3.to_string(), "anisette_test".into());
+        let mut provider = RemoteAnisetteProviderV3::new(DEFAULT_ANISETTE_URL_V3.to_string(), "anisette_test".into(), "0".to_string());
         info!(
             "Remote headers: {:?}",
             (&mut provider as &mut dyn AnisetteHeadersProvider).get_authentication_headers().await?
