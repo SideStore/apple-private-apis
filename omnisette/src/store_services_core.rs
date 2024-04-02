@@ -7,11 +7,11 @@ use crate::adi_proxy::{
     ADIError, ADIProxy, ConfigurableADIProxy, RequestOTPData, StartProvisioningData,
     SynchronizeData,
 };
+use crate::AnisetteError;
 
 use android_loader::android_library::AndroidLibrary;
 use android_loader::sysv64_type;
 use android_loader::{hook_manager, sysv64};
-use anyhow::Result;
 use std::collections::HashMap;
 use std::ffi::{c_char, CString};
 use std::path::PathBuf;
@@ -66,18 +66,18 @@ pub struct StoreServicesCoreADIProxy<'lt> {
 }
 
 impl StoreServicesCoreADIProxy<'_> {
-    pub fn new<'lt>(library_path: &PathBuf) -> Result<StoreServicesCoreADIProxy<'lt>> {
+    pub fn new<'lt>(library_path: &PathBuf) -> Result<StoreServicesCoreADIProxy<'lt>, AnisetteError> {
         Self::with_custom_provisioning_path(library_path, library_path)
     }
 
-    pub fn with_custom_provisioning_path<'lt>(library_path: &PathBuf, provisioning_path: &PathBuf) -> Result<StoreServicesCoreADIProxy<'lt>> {
+    pub fn with_custom_provisioning_path<'lt>(library_path: &PathBuf, provisioning_path: &PathBuf) -> Result<StoreServicesCoreADIProxy<'lt>, AnisetteError> {
         // Should be safe if the library is correct.
         unsafe {
             LoaderHelpers::setup_hooks();
 
             if !library_path.exists() {
                 std::fs::create_dir(library_path)?;
-                return Err(ADIStoreSericesCoreErr::MissingLibraries.into());
+                return Err(AnisetteError::MissingLibraries.into());
             }
 
             let library_path = library_path.canonicalize()?;
@@ -94,55 +94,55 @@ impl StoreServicesCoreADIProxy<'_> {
             let native_library_path = library_path.join("lib").join(ARCH);
 
             let path = native_library_path.join("libstoreservicescore.so");
-            let path = path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?;
+            let path = path.to_str().ok_or(AnisetteError::Misc)?;
             let store_services_core = AndroidLibrary::load(path)?;
 
             let adi_load_library_with_path: sysv64_type!(fn(path: *const u8) -> i32) =
                 std::mem::transmute(
                     store_services_core
                         .get_symbol("kq56gsgHG6")
-                        .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?,
+                        .ok_or(AnisetteError::InvalidLibraryFormat)?,
                 );
 
             let path = CString::new(
                 native_library_path
                     .to_str()
-                    .ok_or(ADIStoreSericesCoreErr::Misc)?,
+                    .ok_or(AnisetteError::Misc)?,
             )
             .unwrap();
             assert_eq!((adi_load_library_with_path)(path.as_ptr() as *const u8), 0);
 
             let adi_set_android_id = store_services_core
                 .get_symbol("Sph98paBcz")
-                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+                .ok_or(AnisetteError::InvalidLibraryFormat)?;
             let adi_set_provisioning_path = store_services_core
                 .get_symbol("nf92ngaK92")
-                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+                .ok_or(AnisetteError::InvalidLibraryFormat)?;
 
             let adi_provisioning_erase = store_services_core
                 .get_symbol("p435tmhbla")
-                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+                .ok_or(AnisetteError::InvalidLibraryFormat)?;
             let adi_synchronize = store_services_core
                 .get_symbol("tn46gtiuhw")
-                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+                .ok_or(AnisetteError::InvalidLibraryFormat)?;
             let adi_provisioning_destroy = store_services_core
                 .get_symbol("fy34trz2st")
-                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+                .ok_or(AnisetteError::InvalidLibraryFormat)?;
             let adi_provisioning_end = store_services_core
                 .get_symbol("uv5t6nhkui")
-                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+                .ok_or(AnisetteError::InvalidLibraryFormat)?;
             let adi_provisioning_start = store_services_core
                 .get_symbol("rsegvyrt87")
-                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+                .ok_or(AnisetteError::InvalidLibraryFormat)?;
             let adi_get_login_code = store_services_core
                 .get_symbol("aslgmuibau")
-                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+                .ok_or(AnisetteError::InvalidLibraryFormat)?;
             let adi_dispose = store_services_core
                 .get_symbol("jk24uiwqrg")
-                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+                .ok_or(AnisetteError::InvalidLibraryFormat)?;
             let adi_otp_request = store_services_core
                 .get_symbol("qi864985u0")
-                .ok_or(ADIStoreSericesCoreErr::InvalidLibraryFormat)?;
+                .ok_or(AnisetteError::InvalidLibraryFormat)?;
 
             let mut proxy = StoreServicesCoreADIProxy {
                 store_services_core,
@@ -164,7 +164,7 @@ impl StoreServicesCoreADIProxy<'_> {
             };
 
             proxy.set_provisioning_path(
-                provisioning_path.to_str().ok_or(ADIStoreSericesCoreErr::Misc)?,
+                provisioning_path.to_str().ok_or(AnisetteError::Misc)?,
             )?;
 
             Ok(proxy)
@@ -311,7 +311,7 @@ impl ADIProxy for StoreServicesCoreADIProxy<'_> {
         self.local_user_uuid = local_user_uuid;
     }
 
-    fn set_device_identifier(&mut self, device_identifier: String) -> Result<()> {
+    fn set_device_identifier(&mut self, device_identifier: String) -> Result<(), ADIError> {
         self.set_identifier(&device_identifier[0..16])?;
         self.device_identifier = device_identifier;
         Ok(())
@@ -410,31 +410,16 @@ impl LoaderHelpers {
     }
 }
 
-#[derive(Debug)]
-enum ADIStoreSericesCoreErr {
-    InvalidLibraryFormat,
-    Misc,
-    MissingLibraries,
-}
-
-impl std::fmt::Display for ADIStoreSericesCoreErr {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{self:?}")
-    }
-}
-
-impl std::error::Error for ADIStoreSericesCoreErr {}
-
 #[cfg(test)]
 mod tests {
     use crate::{AnisetteConfiguration, AnisetteHeaders};
-    use anyhow::Result;
     use log::info;
     use std::path::PathBuf;
+    use crate::AnisetteError;
 
     #[cfg(not(feature = "async"))]
     #[test]
-    fn fetch_anisette_ssc() -> Result<()> {
+    fn fetch_anisette_ssc() -> Result<(), AnisetteError> {
         crate::tests::init_logger();
 
         let mut provider = AnisetteHeaders::get_ssc_anisette_headers_provider(
@@ -450,7 +435,8 @@ mod tests {
 
     #[cfg(feature = "async")]
     #[tokio::test]
-    async fn fetch_anisette_ssc_async() -> Result<()> {
+    async fn fetch_anisette_ssc_async() -> Result<(), AnisetteError> {
+
         crate::tests::init_logger();
 
         let mut provider = AnisetteHeaders::get_ssc_anisette_headers_provider(

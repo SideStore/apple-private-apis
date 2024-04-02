@@ -23,6 +23,7 @@ aes = "0.8.2"
 pkcs7 = "0.3.0"
 reqwest = { version = "0.11.14", features = ["blocking", "json", "default-tls"] }
 omnisette = {path = "../omnisette", features = ["remote-anisette-v3"]}
+thiserror = "1.0.58"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "macros"] }

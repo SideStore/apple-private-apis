@@ -1,5 +1,7 @@
-use anyhow::Result;
+
 use std::collections::HashMap;
+
+use crate::AnisetteError;
 
 #[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 pub trait AnisetteHeadersProvider {
@@ -7,10 +9,10 @@ pub trait AnisetteHeadersProvider {
     async fn get_anisette_headers(
         &mut self,
         skip_provisioning: bool,
-    ) -> Result<HashMap<String, String>>;
+    ) -> Result<HashMap<String, String>, AnisetteError>;
 
     #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
-    async fn get_authentication_headers(&mut self) -> Result<HashMap<String, String>> {
+    async fn get_authentication_headers(&mut self) -> Result<HashMap<String, String>, AnisetteError> {
         let headers = self.get_anisette_headers(false).await?;
         Ok(self.normalize_headers(headers))
     }

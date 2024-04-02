@@ -1,6 +1,6 @@
 use crate::Error;
 use omnisette::{AnisetteConfiguration, AnisetteHeaders};
-use std::{collections::HashMap, path::PathBuf};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct AnisetteData {
@@ -10,15 +10,8 @@ pub struct AnisetteData {
 impl AnisetteData {
     /// Fetches the data at an anisette server
     pub async fn new(config: AnisetteConfiguration) -> Result<Self, crate::Error> {
-        let base_headers = match AnisetteHeaders::get_anisette_headers_provider(config) {
-            Ok(mut b) => match b.provider.get_authentication_headers().await {
-                Ok(b) => b,
-                Err(_) => return Err(Error::ErrorGettingAnisette),
-            },
-            Err(_) => {
-                return Err(Error::HttpRequest);
-            }
-        };
+        let mut b = AnisetteHeaders::get_anisette_headers_provider(config)?;
+        let base_headers = b.provider.get_authentication_headers().await?;
 
         Ok(AnisetteData { base_headers })
     }
@@ -30,7 +23,6 @@ impl AnisetteData {
         app_info: bool,
     ) -> HashMap<String, String> {
         let mut headers = self.base_headers.clone();
-        println!("headers {:?}", headers);
         let old_client_info = headers.remove("X-Mme-Client-Info");
         if client_info {
             let client_info = match old_client_info {

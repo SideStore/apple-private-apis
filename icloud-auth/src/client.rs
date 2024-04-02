@@ -166,36 +166,34 @@ pub struct AuthenticationExtras {
 //     }
 // }
 
-async fn parse_response(res: Result<Response, reqwest::Error>) -> plist::Dictionary {
-    let res = res.unwrap().text().await.unwrap();
-    println!("{:?}", res);
-    let res: plist::Dictionary = plist::from_bytes(res.as_bytes()).unwrap();
+async fn parse_response(res: Result<Response, reqwest::Error>) -> Result<plist::Dictionary, crate::Error> {
+    let res = res?.text().await?;
+    let res: plist::Dictionary = plist::from_bytes(res.as_bytes())?;
     let res: plist::Value = res.get("Response").unwrap().to_owned();
     match res {
-        plist::Value::Dictionary(dict) => dict,
-        _ => panic!("Invalid response"),
+        plist::Value::Dictionary(dict) => Ok(dict),
+        _ => Err(crate::Error::Parse),
     }
 }
 
 impl AppleAccount {
-    pub async fn new(config: AnisetteConfiguration) -> Self {
-        let anisette = AnisetteData::new(config).await;
-        Self::new_with_anisette(anisette.unwrap())
+    pub async fn new(config: AnisetteConfiguration) -> Result<Self, crate::Error> {
+        let anisette = AnisetteData::new(config).await?;
+        Ok(Self::new_with_anisette(anisette)?)
     }
 
-    pub fn new_with_anisette(anisette: AnisetteData) -> Self {
+    pub fn new_with_anisette(anisette: AnisetteData) -> Result<Self, crate::Error> {
         let client = ClientBuilder::new()
-            .add_root_certificate(Certificate::from_der(APPLE_ROOT).unwrap())
+            .add_root_certificate(Certificate::from_der(APPLE_ROOT)?)
             .http1_title_case_headers()
             .connection_verbose(true)
-            .build()
-            .unwrap();
+            .build()?;
 
-        AppleAccount {
+        Ok(AppleAccount {
             client,
             anisette,
             spd: None,
-        }
+        })
     }
 
     pub async fn login(
@@ -203,8 +201,8 @@ impl AppleAccount {
         tfa_closure: impl Fn() -> String,
         config: AnisetteConfiguration,
     ) -> Result<AppleAccount, Error> {
-        let anisette = AnisetteData::new(config);
-        AppleAccount::login_with_anisette(appleid_closure, tfa_closure, anisette.await.unwrap()).await
+        let anisette = AnisetteData::new(config).await?;
+        AppleAccount::login_with_anisette(appleid_closure, tfa_closure, anisette).await
     }
 
     pub async fn get_app_token(&self, app_name: &str) -> Result<AppToken, Error> {
@@ -257,7 +255,7 @@ impl AppleAccount {
         };
 
         let mut buffer = Vec::new();
-        plist::to_writer_xml(&mut buffer, &packet).unwrap();
+        plist::to_writer_xml(&mut buffer, &packet)?;
         let buffer = String::from_utf8(buffer).unwrap();
 
         println!("{:?}", gsa_headers.clone());
@@ -269,7 +267,7 @@ impl AppleAccount {
             .headers(gsa_headers.clone())
             .body(buffer)
             .send().await;
-        let res = parse_response(res).await;
+        let res = parse_response(res).await?;
         let err_check = Self::check_error(&res);
         if err_check.is_err() {
             return Err(err_check.err().unwrap());
@@ -314,20 +312,20 @@ impl AppleAccount {
         tfa_closure: G,
         anisette: AnisetteData,
     ) -> Result<AppleAccount, Error> {
-        let mut _self = AppleAccount::new_with_anisette(anisette);
+        let mut _self = AppleAccount::new_with_anisette(anisette)?;
         let (username, password) = appleid_closure();
         let mut response = _self.login_email_pass(username.clone(), password.clone()).await?;
         loop {
             match response {
-                LoginResponse::NeedsDevice2FA() => response = _self.send_2fa_to_devices().await.unwrap(),
+                LoginResponse::NeedsDevice2FA() => response = _self.send_2fa_to_devices().await?,
                 LoginResponse::Needs2FAVerification() => {
-                    response = _self.verify_2fa(tfa_closure()).await.unwrap()
+                    response = _self.verify_2fa(tfa_closure()).await?
                 }
                 LoginResponse::NeedsSMS2FA() => {
-                    response = _self.send_sms_2fa_to_devices(1).await.unwrap()
+                    response = _self.send_sms_2fa_to_devices(1).await?
                 }
                 LoginResponse::NeedsSMS2FAVerification(body) => {
-                    response = _self.verify_sms_2fa(tfa_closure(), body).await.unwrap()
+                    response = _self.verify_sms_2fa(tfa_closure(), body).await?
                 }
                 LoginResponse::NeedsLogin() => {
                     response = _self.login_email_pass(username.clone(), password.clone()).await?
@@ -385,7 +383,7 @@ impl AppleAccount {
         };
 
         let mut buffer = Vec::new();
-        plist::to_writer_xml(&mut buffer, &packet).unwrap();
+        plist::to_writer_xml(&mut buffer, &packet)?;
         let buffer = String::from_utf8(buffer).unwrap();
 
         println!("{:?}", gsa_headers.clone());
@@ -398,7 +396,7 @@ impl AppleAccount {
             .body(buffer)
             .send().await;
 
-        let res = parse_response(res).await;
+        let res = parse_response(res).await?;
         let err_check = Self::check_error(&res);
         if err_check.is_err() {
             return Err(err_check.err().unwrap());
@@ -441,7 +439,7 @@ impl AppleAccount {
         };
 
         let mut buffer = Vec::new();
-        plist::to_writer_xml(&mut buffer, &packet).unwrap();
+        plist::to_writer_xml(&mut buffer, &packet)?;
         let buffer = String::from_utf8(buffer).unwrap();
 
         let res = self
@@ -451,7 +449,7 @@ impl AppleAccount {
             .body(buffer)
             .send().await;
 
-        let res = parse_response(res).await;
+        let res = parse_response(res).await?;
         let err_check = Self::check_error(&res);
         if err_check.is_err() {
             return Err(err_check.err().unwrap());
@@ -506,9 +504,9 @@ impl AppleAccount {
             .client
             .get("https://gsa.apple.com/auth/verify/trusteddevice")
             .headers(headers)
-            .send().await;
+            .send().await?;
 
-        if !res.as_ref().unwrap().status().is_success() {
+        if !res.status().is_success() {
             return Err(Error::AuthSrp);
         }
 
@@ -531,9 +529,9 @@ impl AppleAccount {
             .put("https://gsa.apple.com/auth/verify/phone/")
             .headers(headers)
             .json(&body)
-            .send().await;
+            .send().await?;
 
-        if !res.as_ref().unwrap().status().is_success() {
+        if !res.status().is_success() {
             return Err(Error::AuthSrp);
         }
 
@@ -547,8 +545,8 @@ impl AppleAccount {
             .get("https://gsa.apple.com/auth")
             .headers(headers)
             .header("Accept", "application/json")
-            .send().await.unwrap()
-            .json::<AuthenticationExtras>().await.unwrap())
+            .send().await?
+            .json::<AuthenticationExtras>().await?)
     }
 
     pub async fn verify_2fa(&self, code: String) -> Result<LoginResponse, Error> {
@@ -562,15 +560,12 @@ impl AppleAccount {
                 HeaderName::from_str("security-code").unwrap(),
                 HeaderValue::from_str(&code).unwrap(),
             )
-            .send().await;
+            .send().await?;
 
         let res: plist::Dictionary =
-            plist::from_bytes(res.unwrap().text().await.unwrap().as_bytes()).unwrap();
+            plist::from_bytes(res.text().await?.as_bytes())?;
 
-        let err_check = Self::check_error(&res);
-        if err_check.is_err() {
-            return Err(err_check.err().unwrap());
-        }
+        Self::check_error(&res)?;
 
         Ok(LoginResponse::NeedsLogin())
     }
@@ -586,7 +581,7 @@ impl AppleAccount {
             .post("https://gsa.apple.com/auth/verify/phone/securitycode")
             .headers(headers)
             .json(&body)
-            .send().await.unwrap();
+            .send().await?;
 
         if res.status() != 200 {
             return Err(Error::AuthSrp);
