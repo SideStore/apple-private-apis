@@ -103,7 +103,7 @@ pub struct AppToken {
     pub app: String,
 }
 //Just make it return a custom enum, with LoggedIn(account: AppleAccount) or Needs2FA(FinishLoginDel: fn(i32) -> TFAResponse)
-pub enum LoginResponse {
+pub enum LoginState {
     LoggedIn,
     // NeedsSMS2FASent(Send2FAToDevices),
     NeedsDevice2FA,
@@ -112,7 +112,6 @@ pub enum LoginResponse {
     NeedsSMS2FAVerification(VerifyBody),
     NeedsExtraStep(String),
     NeedsLogin,
-    Failed(Error),
 }
 
 #[derive(Serialize)]
@@ -317,22 +316,21 @@ impl AppleAccount {
         let mut response = _self.login_email_pass(username.clone(), password.clone()).await?;
         loop {
             match response {
-                LoginResponse::NeedsDevice2FA => response = _self.send_2fa_to_devices().await?,
-                LoginResponse::Needs2FAVerification => {
+                LoginState::NeedsDevice2FA => response = _self.send_2fa_to_devices().await?,
+                LoginState::Needs2FAVerification => {
                     response = _self.verify_2fa(tfa_closure()).await?
                 }
-                LoginResponse::NeedsSMS2FA => {
+                LoginState::NeedsSMS2FA => {
                     response = _self.send_sms_2fa_to_devices(1).await?
                 }
-                LoginResponse::NeedsSMS2FAVerification(body) => {
+                LoginState::NeedsSMS2FAVerification(body) => {
                     response = _self.verify_sms_2fa(tfa_closure(), body).await?
                 }
-                LoginResponse::NeedsLogin => {
+                LoginState::NeedsLogin => {
                     response = _self.login_email_pass(username.clone(), password.clone()).await?
                 }
-                LoginResponse::LoggedIn => return Ok(_self),
-                LoginResponse::Failed(e) => return Err(e),
-                LoginResponse::NeedsExtraStep(step) => return Err(Error::ExtraStep(step))
+                LoginState::LoggedIn => return Ok(_self),
+                LoginState::NeedsExtraStep(step) => return Err(Error::ExtraStep(step))
             }
         }
     }
@@ -346,7 +344,7 @@ impl AppleAccount {
         &mut self,
         username: String,
         password: String,
-    ) -> Result<LoginResponse, Error> {
+    ) -> Result<LoginState, Error> {
         let srp_client = SrpClient::<Sha256>::new(&G_2048);
         let a: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
         let a_pub = srp_client.compute_public_ephemeral(&a);
@@ -468,13 +466,13 @@ impl AppleAccount {
 
         if let Some(plist::Value::String(s)) = status.get("au") {
             return match s.as_str() {
-                "trustedDeviceSecondaryAuth" => Ok(LoginResponse::NeedsDevice2FA),
-                "secondaryAuth" => Ok(LoginResponse::NeedsSMS2FA),
-                _unk => Ok(LoginResponse::NeedsExtraStep(_unk.to_string()))
+                "trustedDeviceSecondaryAuth" => Ok(LoginState::NeedsDevice2FA),
+                "secondaryAuth" => Ok(LoginState::NeedsSMS2FA),
+                _unk => Ok(LoginState::NeedsExtraStep(_unk.to_string()))
             }
         }
 
-        Ok(LoginResponse::LoggedIn)
+        Ok(LoginState::LoggedIn)
     }
 
     fn create_session_key(usr: &SrpClientVerifier<Sha256>, name: &str) -> Vec<u8> {
@@ -497,7 +495,7 @@ impl AppleAccount {
             .unwrap()
     }
 
-    pub async fn send_2fa_to_devices(&self) -> Result<LoginResponse, crate::Error> {
+    pub async fn send_2fa_to_devices(&self) -> Result<LoginState, crate::Error> {
         let headers = self.build_2fa_headers(false);
 
         let res = self
@@ -510,10 +508,10 @@ impl AppleAccount {
             return Err(Error::AuthSrp);
         }
 
-        return Ok(LoginResponse::Needs2FAVerification);
+        return Ok(LoginState::Needs2FAVerification);
     }
 
-    pub async fn send_sms_2fa_to_devices(&self, phone_id: u32) -> Result<LoginResponse, crate::Error> {
+    pub async fn send_sms_2fa_to_devices(&self, phone_id: u32) -> Result<LoginState, crate::Error> {
         let headers = self.build_2fa_headers(true);
 
         let body = VerifyBody {
@@ -535,7 +533,7 @@ impl AppleAccount {
             return Err(Error::AuthSrp);
         }
 
-        return Ok(LoginResponse::NeedsSMS2FAVerification(body));
+        return Ok(LoginState::NeedsSMS2FAVerification(body));
     }
 
     pub async fn get_auth_extras(&self) -> Result<AuthenticationExtras, Error> {
@@ -549,7 +547,7 @@ impl AppleAccount {
             .json::<AuthenticationExtras>().await?)
     }
 
-    pub async fn verify_2fa(&self, code: String) -> Result<LoginResponse, Error> {
+    pub async fn verify_2fa(&self, code: String) -> Result<LoginState, Error> {
         let headers = self.build_2fa_headers(false);
         // println!("Recieved code: {}", code);
         let res = self
@@ -567,10 +565,10 @@ impl AppleAccount {
 
         Self::check_error(&res)?;
 
-        Ok(LoginResponse::NeedsLogin)
+        Ok(LoginState::NeedsLogin)
     }
 
-    pub async fn verify_sms_2fa(&self, code: String, mut body: VerifyBody) -> Result<LoginResponse, Error> {
+    pub async fn verify_sms_2fa(&self, code: String, mut body: VerifyBody) -> Result<LoginState, Error> {
         let headers = self.build_2fa_headers(true);
         // println!("Recieved code: {}", code);
 
@@ -587,7 +585,7 @@ impl AppleAccount {
             return Err(Error::AuthSrp);
         }
 
-        Ok(LoginResponse::NeedsLogin)
+        Ok(LoginState::NeedsLogin)
     }
 
     fn check_error(res: &plist::Dictionary) -> Result<(), Error> {
