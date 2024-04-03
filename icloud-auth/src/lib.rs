@@ -3,6 +3,7 @@ mod client;
 use std::fmt::Display;
 
 pub use client::AppleAccount;
+pub use omnisette::AnisetteConfiguration;
 
 use thiserror::Error;
 #[derive(Debug, Error)]
