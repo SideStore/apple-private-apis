@@ -335,9 +335,12 @@ impl AppleAccount {
         }
     }
 
-    pub fn get_pet(&self) -> String {
-        self.spd.as_ref().unwrap().get("t").unwrap().as_dictionary().unwrap().get("com.apple.gs.idms.pet")
-            .unwrap().as_dictionary().unwrap().get("token").unwrap().as_string().unwrap().to_string()
+    pub fn get_pet(&self) -> Option<String> {
+        let Some(token) = self.spd.as_ref().unwrap().get("t") else {
+            return None
+        };
+        Some(token.as_dictionary().unwrap().get("com.apple.gs.idms.pet")
+            .unwrap().as_dictionary().unwrap().get("token").unwrap().as_string().unwrap().to_string())
     }
 
     pub async fn login_email_pass(
