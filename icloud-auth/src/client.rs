@@ -104,7 +104,7 @@ pub struct AppToken {
 }
 //Just make it return a custom enum, with LoggedIn(account: AppleAccount) or Needs2FA(FinishLoginDel: fn(i32) -> TFAResponse)
 pub enum LoginResponse {
-    LoggedIn(AppleAccount),
+    LoggedIn,
     // NeedsSMS2FASent(Send2FAToDevices),
     NeedsDevice2FA,
     Needs2FAVerification,
@@ -330,7 +330,7 @@ impl AppleAccount {
                 LoginResponse::NeedsLogin => {
                     response = _self.login_email_pass(username.clone(), password.clone()).await?
                 }
-                LoginResponse::LoggedIn(ac) => return Ok(ac),
+                LoginResponse::LoggedIn => return Ok(_self),
                 LoginResponse::Failed(e) => return Err(e),
                 LoginResponse::NeedsExtraStep(step) => return Err(Error::ExtraStep(step))
             }
@@ -474,7 +474,7 @@ impl AppleAccount {
             }
         }
 
-        Ok(LoginResponse::LoggedIn(self.clone().to_owned()))
+        Ok(LoginResponse::LoggedIn)
     }
 
     fn create_session_key(usr: &SrpClientVerifier<Sha256>, name: &str) -> Vec<u8> {
