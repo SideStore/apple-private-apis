@@ -34,7 +34,7 @@ mod tests {
             .set_configuration_path(PathBuf::from_str("anisette_test").unwrap())).await;
 
         let account = acc.unwrap();
-        println!("PET: {}", account.get_pet());
+        println!("PET: {}", account.get_pet().unwrap());
         return;
     }
 }

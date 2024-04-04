@@ -2,23 +2,24 @@ pub mod anisette;
 mod client;
 use std::fmt::Display;
 
-pub use client::AppleAccount;
+pub use client::{AppleAccount, LoginState, TrustedPhoneNumber, AuthenticationExtras, VerifyBody};
 pub use omnisette::AnisetteConfiguration;
 
 use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum Error {
+    #[error("Failed to parse the response")]
     Parse,
+    #[error("Failed to authenticate.")]
     AuthSrp,
+    #[error("{1} ({0})")]
     AuthSrpWithMessage(i64, String),
+    #[error("Please login to appleid.apple.com to fix this account")]
     ExtraStep(String),
+    #[error("Failed to parse a plist {0}")]
     PlistError(#[from] plist::Error),
+    #[error("Request failed {0}")]
     ReqwestError(#[from] reqwest::Error),
+    #[error("Failed getting anisette data {0}")]
     ErrorGettingAnisette(#[from] omnisette::AnisetteError)
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", format!("{:?}", self))
-    }
 }

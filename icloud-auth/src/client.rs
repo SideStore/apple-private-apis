@@ -103,6 +103,8 @@ pub struct AppToken {
     pub app: String,
 }
 //Just make it return a custom enum, with LoggedIn(account: AppleAccount) or Needs2FA(FinishLoginDel: fn(i32) -> TFAResponse)
+#[repr(C)]
+#[derive(Debug)]
 pub enum LoginState {
     LoggedIn,
     // NeedsSMS2FASent(Send2FAToDevices),
@@ -114,17 +116,17 @@ pub enum LoginState {
     NeedsLogin,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct VerifyCode {
     code: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 struct PhoneNumber {
     id: u32
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifyBody {
     phone_number: PhoneNumber,
@@ -313,7 +315,7 @@ impl AppleAccount {
     ) -> Result<AppleAccount, Error> {
         let mut _self = AppleAccount::new_with_anisette(anisette)?;
         let (username, password) = appleid_closure();
-        let mut response = _self.login_email_pass(username.clone(), password.clone()).await?;
+        let mut response = _self.login_email_pass(&username, &password).await?;
         loop {
             match response {
                 LoginState::NeedsDevice2FA => response = _self.send_2fa_to_devices().await?,
@@ -327,7 +329,7 @@ impl AppleAccount {
                     response = _self.verify_sms_2fa(tfa_closure(), body).await?
                 }
                 LoginState::NeedsLogin => {
-                    response = _self.login_email_pass(username.clone(), password.clone()).await?
+                    response = _self.login_email_pass(&username, &password).await?
                 }
                 LoginState::LoggedIn => return Ok(_self),
                 LoginState::NeedsExtraStep(step) => return Err(Error::ExtraStep(step))
@@ -345,8 +347,8 @@ impl AppleAccount {
 
     pub async fn login_email_pass(
         &mut self,
-        username: String,
-        password: String,
+        username: &str,
+        password: &str,
     ) -> Result<LoginState, Error> {
         let srp_client = SrpClient::<Sha256>::new(&G_2048);
         let a: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
@@ -375,7 +377,7 @@ impl AppleAccount {
             cpd: self.anisette.to_plist(true, false, false),
             operation: "init".to_string(),
             ps: vec!["s2k".to_string(), "s2k_fo".to_string()],
-            username: username.clone(),
+            username: username.to_string(),
         };
 
         let packet = InitRequest {
@@ -431,7 +433,7 @@ impl AppleAccount {
             c: c.to_string(),
             cpd: self.anisette.to_plist(true, false, false),
             operation: "complete".to_string(),
-            username,
+            username: username.to_string(),
         };
 
         let packet = ChallengeRequest {
