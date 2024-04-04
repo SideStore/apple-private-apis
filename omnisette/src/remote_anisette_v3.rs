@@ -381,7 +381,7 @@ impl RemoteAnisetteProviderV3 {
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl AnisetteHeadersProvider for RemoteAnisetteProviderV3 {
     async fn get_anisette_headers(
         &mut self,

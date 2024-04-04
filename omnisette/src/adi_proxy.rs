@@ -95,7 +95,7 @@ pub struct RequestOTPData {
 }
 
 #[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
-pub trait ADIProxy {
+pub trait ADIProxy: Send + Sync {   
     fn erase_provisioning(&mut self, ds_id: i64) -> Result<(), ADIError>;
     fn synchronize(&mut self, ds_id: i64, sim: &[u8]) -> Result<SynchronizeData, ADIError>;
     fn destroy_provisioning_session(&mut self, session: u32) -> Result<(), ADIError>;
@@ -332,7 +332,7 @@ impl<ProxyType: ADIProxy + 'static> ADIProxyAnisetteProvider<ProxyType> {
     }
 }
 
-#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
+#[cfg_attr(feature = "async", async_trait::async_trait)]
 impl<ProxyType: ADIProxy + 'static> AnisetteHeadersProvider
     for ADIProxyAnisetteProvider<ProxyType>
 {

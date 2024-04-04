@@ -15,7 +15,7 @@ impl RemoteAnisetteProvider {
     }
 }
 
-#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
+#[cfg_attr(feature = "async", async_trait::async_trait)]
 impl AnisetteHeadersProvider for RemoteAnisetteProvider {
     #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
     async fn get_anisette_headers(
