@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 use crate::AnisetteError;
 
-#[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
-pub trait AnisetteHeadersProvider {
+#[cfg_attr(feature = "async", async_trait::async_trait)]
+pub trait AnisetteHeadersProvider: Send + Sync {
     #[cfg_attr(not(feature = "async"), remove_async_await::remove_async_await)]
     async fn get_anisette_headers(
         &mut self,
