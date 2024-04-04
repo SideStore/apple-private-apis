@@ -6,7 +6,6 @@
 
 use crate::adi_proxy::{ADIProxyAnisetteProvider, ConfigurableADIProxy};
 use crate::anisette_headers_provider::AnisetteHeadersProvider;
-use std::fmt::Formatter;
 use std::io;
 use std::path::PathBuf;
 use adi_proxy::ADIError;
@@ -32,27 +31,34 @@ pub struct AnisetteHeaders;
 #[derive(Debug, Error)]
 pub enum AnisetteError {
     #[allow(dead_code)]
+    #[error("Unsupported device")]
     UnsupportedDevice,
+    #[error("Invalid argument {0}")]
     InvalidArgument(String),
+    #[error("Anisette not provisioned!")]
     AnisetteNotProvisioned,
+    #[error("Plist serialization error {0}")]
     PlistError(#[from] plist::Error),
+    #[error("Request Error {0}")]
     ReqwestError(#[from] reqwest::Error),
     #[cfg(feature = "remote-anisette-v3")]
+    #[error("Provisioning socket error {0}")]
     WsError(#[from] tokio_tungstenite::tungstenite::error::Error),
     #[cfg(feature = "remote-anisette-v3")]
+    #[error("JSON error {0}")]
     SerdeError(#[from] serde_json::Error),
+    #[error("IO error {0}")]
     IOError(#[from] io::Error),
+    #[error("ADI error {0}")]
     ADIError(#[from] ADIError),
+    #[error("Invalid library format")]
     InvalidLibraryFormat,
+    #[error("Misc")]
     Misc,
+    #[error("Missing Libraries")]
     MissingLibraries,
+    #[error("{0}")]
     Anyhow(#[from] anyhow::Error)
-}
-
-impl std::fmt::Display for AnisetteError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AnisetteMetaError::{self:?}")
-    }
 }
 
 pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
