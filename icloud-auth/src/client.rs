@@ -17,6 +17,7 @@ use srp::{
     client::{SrpClient, SrpClientVerifier},
     groups::G_2048,
 };
+use tokio::sync::Mutex;
 
 const GSA_ENDPOINT: &str = "https://gsa.apple.com/grandslam/GsService2";
 const APPLE_ROOT: &[u8] = include_bytes!("./apple_root.der");
@@ -86,10 +87,9 @@ pub struct AuthTokenRequest {
     request: AuthTokenRequestBody,
 }
 
-#[derive(Clone)]
 pub struct AppleAccount {
     //TODO: move this to omnisette
-    pub anisette: AnisetteData,
+    pub anisette: Mutex<AnisetteData>,
     // pub spd:  Option<plist::Dictionary>,
     //mutable spd
     pub spd: Option<plist::Dictionary>,
@@ -192,7 +192,7 @@ impl AppleAccount {
 
         Ok(AppleAccount {
             client,
-            anisette,
+            anisette: Mutex::new(anisette),
             spd: None,
         })
     }
@@ -206,11 +206,21 @@ impl AppleAccount {
         AppleAccount::login_with_anisette(appleid_closure, tfa_closure, anisette).await
     }
 
+    pub async fn get_anisette(&self) -> AnisetteData {
+        let mut locked = self.anisette.lock().await;
+        if locked.needs_refresh() {
+            *locked = locked.refresh().await.unwrap();
+        }
+        locked.clone()
+    }
+
     pub async fn get_app_token(&self, app_name: &str) -> Result<AppToken, Error> {
         let spd = self.spd.as_ref().unwrap();
         // println!("spd: {:#?}", spd);
         let dsid = spd.get("adsid").unwrap().as_string().unwrap();
         let auth_token = spd.get("GsIdmsToken").unwrap().as_string().unwrap();
+
+        let valid_anisette = self.get_anisette().await;
 
         let sk = spd.get("sk").unwrap().as_data().unwrap();
         let c = spd.get("c").unwrap().as_data().unwrap();
@@ -234,14 +244,14 @@ impl AppleAccount {
         );
         gsa_headers.insert(
             "X-MMe-Client-Info",
-            HeaderValue::from_str(&self.anisette.get_header("x-mme-client-info")?).unwrap(),
+            HeaderValue::from_str(&valid_anisette.get_header("x-mme-client-info")?).unwrap(),
         );
 
         let header = RequestHeader {
             version: "1.0.1".to_string(),
         };
         let body = AuthTokenRequestBody {
-            cpd: self.anisette.to_plist(true, false, false),
+            cpd: valid_anisette.to_plist(true, false, false),
             app: vec![app_name.to_string()],
             c: plist::Value::Data(c.to_vec()),
             operation: "apptokens".to_owned(),
@@ -354,6 +364,8 @@ impl AppleAccount {
         let a: Vec<u8> = (0..32).map(|_| rand::random::<u8>()).collect();
         let a_pub = srp_client.compute_public_ephemeral(&a);
 
+        let valid_anisette = self.get_anisette().await;
+
         let mut gsa_headers = HeaderMap::new();
         gsa_headers.insert(
             "Content-Type",
@@ -366,7 +378,7 @@ impl AppleAccount {
         );
         gsa_headers.insert(
             "X-MMe-Client-Info",
-            HeaderValue::from_str(&self.anisette.get_header("x-mme-client-info")?).unwrap(),
+            HeaderValue::from_str(&valid_anisette.get_header("x-mme-client-info")?).unwrap(),
         );
 
         let header = RequestHeader {
@@ -374,7 +386,7 @@ impl AppleAccount {
         };
         let body = InitRequestBody {
             a_pub: plist::Value::Data(a_pub),
-            cpd: self.anisette.to_plist(true, false, false),
+            cpd: valid_anisette.to_plist(true, false, false),
             operation: "init".to_string(),
             ps: vec!["s2k".to_string(), "s2k_fo".to_string()],
             username: username.to_string(),
@@ -431,7 +443,7 @@ impl AppleAccount {
         let body = ChallengeRequestBody {
             m: plist::Value::Data(m.to_vec()),
             c: c.to_string(),
-            cpd: self.anisette.to_plist(true, false, false),
+            cpd: valid_anisette.to_plist(true, false, false),
             operation: "complete".to_string(),
             username: username.to_string(),
         };
@@ -506,7 +518,7 @@ impl AppleAccount {
         let res = self
             .client
             .get("https://gsa.apple.com/auth/verify/trusteddevice")
-            .headers(headers)
+            .headers(headers.await)
             .send().await?;
 
         if !res.status().is_success() {
@@ -530,7 +542,7 @@ impl AppleAccount {
         let res = self
             .client
             .put("https://gsa.apple.com/auth/verify/phone/")
-            .headers(headers)
+            .headers(headers.await)
             .json(&body)
             .send().await?;
 
@@ -546,7 +558,7 @@ impl AppleAccount {
 
         Ok(self.client
             .get("https://gsa.apple.com/auth")
-            .headers(headers)
+            .headers(headers.await)
             .header("Accept", "application/json")
             .send().await?
             .json::<AuthenticationExtras>().await?)
@@ -558,7 +570,7 @@ impl AppleAccount {
         let res = self
             .client
             .get("https://gsa.apple.com/grandslam/GsService2/validate")
-            .headers(headers)
+            .headers(headers.await)
             .header(
                 HeaderName::from_str("security-code").unwrap(),
                 HeaderValue::from_str(&code).unwrap(),
@@ -574,7 +586,7 @@ impl AppleAccount {
     }
 
     pub async fn verify_sms_2fa(&self, code: String, mut body: VerifyBody) -> Result<LoginState, Error> {
-        let headers = self.build_2fa_headers(true);
+        let headers = self.build_2fa_headers(true).await;
         // println!("Recieved code: {}", code);
 
         body.security_code = Some(VerifyCode { code });
@@ -609,15 +621,17 @@ impl AppleAccount {
         Ok(())
     }
 
-    pub fn build_2fa_headers(&self, sms: bool) -> HeaderMap {
+    pub async fn build_2fa_headers(&self, sms: bool) -> HeaderMap {
         let spd = self.spd.as_ref().unwrap();
         let dsid = spd.get("adsid").unwrap().as_string().unwrap();
         let token = spd.get("GsIdmsToken").unwrap().as_string().unwrap();
 
         let identity_token = base64::encode(format!("{}:{}", dsid, token));
 
+        let valid_anisette = self.get_anisette().await;
+
         let mut headers = HeaderMap::new();
-        self.anisette
+        valid_anisette
             .generate_headers(false, true, true)
             .iter()
             .for_each(|(k, v)| {
@@ -643,7 +657,7 @@ impl AppleAccount {
 
         headers.insert(
             "Loc",
-            HeaderValue::from_str(&self.anisette.get_header("x-apple-locale").unwrap()).unwrap(),
+            HeaderValue::from_str(&valid_anisette.get_header("x-apple-locale").unwrap()).unwrap(),
         );
 
         headers
