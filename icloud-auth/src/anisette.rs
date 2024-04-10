@@ -1,19 +1,35 @@
 use crate::Error;
 use omnisette::{AnisetteConfiguration, AnisetteHeaders};
-use std::collections::HashMap;
+use std::{collections::HashMap, time::SystemTime};
 
 #[derive(Debug, Clone)]
 pub struct AnisetteData {
     pub base_headers: HashMap<String, String>,
+    pub generated_at: SystemTime,
+    pub config: AnisetteConfiguration,
 }
 
 impl AnisetteData {
     /// Fetches the data at an anisette server
     pub async fn new(config: AnisetteConfiguration) -> Result<Self, crate::Error> {
-        let mut b = AnisetteHeaders::get_anisette_headers_provider(config)?;
+        let mut b = AnisetteHeaders::get_anisette_headers_provider(config.clone())?;
         let base_headers = b.provider.get_authentication_headers().await?;
 
-        Ok(AnisetteData { base_headers })
+        Ok(AnisetteData { base_headers, generated_at: SystemTime::now(), config })
+    }
+
+    pub fn needs_refresh(&self) -> bool {
+        let elapsed = self.generated_at.elapsed().unwrap();
+        elapsed.as_secs() > 60
+    }
+
+    pub fn is_valid(&self) -> bool {
+        let elapsed = self.generated_at.elapsed().unwrap();
+        elapsed.as_secs() < 90
+    }
+
+    pub async fn refresh(&self) -> Result<Self, crate::Error> {
+        Self::new(self.config.clone()).await
     }
 
     pub fn generate_headers(
@@ -22,6 +38,9 @@ impl AnisetteData {
         client_info: bool,
         app_info: bool,
     ) -> HashMap<String, String> {
+        if !self.is_valid() {
+            panic!("Invalid data!")
+        }
         let mut headers = self.base_headers.clone();
         let old_client_info = headers.remove("X-Mme-Client-Info");
         if client_info {
