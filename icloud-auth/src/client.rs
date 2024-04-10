@@ -355,6 +355,13 @@ impl AppleAccount {
             .unwrap().as_dictionary().unwrap().get("token").unwrap().as_string().unwrap().to_string())
     }
 
+    pub fn get_name(&self) -> (String, String) {
+        (
+            self.spd.as_ref().unwrap().get("fn").unwrap().as_string().unwrap().to_string(),
+            self.spd.as_ref().unwrap().get("ln").unwrap().as_string().unwrap().to_string()
+        )
+    }
+
     pub async fn login_email_pass(
         &mut self,
         username: &str,
