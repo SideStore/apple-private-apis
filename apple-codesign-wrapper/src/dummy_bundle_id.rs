@@ -55,7 +55,7 @@ fn add_bundle_id(bundle_id: &str, path: &Path) {
         );
         dummy_bundle_id_num_counter.increase();
         drop(dummy_bundle_id_num_counter);
-        plist.insert(BUNDLE_ID_PROPERTY, dummy_bundle_id);
+        plist.insert(BUNDLE_ID_PROPERTY.to_owned(), plist::Value::String(dummy_bundle_id));
 
         let mut bytes = vec![];
         plist::to_writer_xml(&mut bytes, plist).unwrap();
