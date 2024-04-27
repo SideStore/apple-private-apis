@@ -116,17 +116,17 @@ pub enum LoginState {
     NeedsLogin,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 struct VerifyCode {
     code: String,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 struct PhoneNumber {
     id: u32
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct VerifyBody {
     phone_number: PhoneNumber,
@@ -342,7 +342,13 @@ impl AppleAccount {
                     response = _self.login_email_pass(&username, &password).await?
                 }
                 LoginState::LoggedIn => return Ok(_self),
-                LoginState::NeedsExtraStep(step) => return Err(Error::ExtraStep(step))
+                LoginState::NeedsExtraStep(step) => {
+                    if _self.get_pet().is_some() {
+                        return Ok(_self)
+                    } else {
+                        return Err(Error::ExtraStep(step))
+                    }
+                }
             }
         }
     }
@@ -538,6 +544,7 @@ impl AppleAccount {
     pub async fn send_sms_2fa_to_devices(&self, phone_id: u32) -> Result<LoginState, crate::Error> {
         let headers = self.build_2fa_headers(true);
 
+
         let body = VerifyBody {
             phone_number: PhoneNumber {
                 id: phone_id
@@ -602,11 +609,12 @@ impl AppleAccount {
             .client
             .post("https://gsa.apple.com/auth/verify/phone/securitycode")
             .headers(headers)
+            .header("accept", "application/json")
             .json(&body)
             .send().await?;
 
         if res.status() != 200 {
-            return Err(Error::AuthSrp);
+            return Err(Error::Bad2faCode);
         }
 
         Ok(LoginState::NeedsLogin)

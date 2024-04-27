@@ -12,6 +12,8 @@ pub enum Error {
     Parse,
     #[error("Failed to authenticate.")]
     AuthSrp,
+    #[error("Bad 2fa code.")]
+    Bad2faCode,
     #[error("{1} ({0})")]
     AuthSrpWithMessage(i64, String),
     #[error("Please login to appleid.apple.com to fix this account")]
