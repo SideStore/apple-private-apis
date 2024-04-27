@@ -7,9 +7,7 @@ use cbc::cipher::{BlockDecryptMut, KeyIvInit};
 use hmac::{Hmac, Mac};
 use omnisette::AnisetteConfiguration;
 use reqwest::{
-    Client, ClientBuilder, Response,
-    header::{HeaderMap, HeaderName, HeaderValue},
-    Certificate,
+    header::{HeaderMap, HeaderName, HeaderValue}, Certificate, Client, ClientBuilder, Proxy, Response
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -134,6 +132,7 @@ pub struct VerifyBody {
     security_code: Option<VerifyCode>
 }
 
+#[repr(C)]
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrustedPhoneNumber {
@@ -153,6 +152,8 @@ pub struct AuthenticationExtras {
     pub recovery_web_url: Option<String>,
     pub repair_phone_number_url: Option<String>,
     pub repair_phone_number_web_url: Option<String>,
+    #[serde(skip)]
+    pub new_state: Option<LoginState>,
 }
 
 // impl Send2FAToDevices {
@@ -570,12 +571,24 @@ impl AppleAccount {
     pub async fn get_auth_extras(&self) -> Result<AuthenticationExtras, Error> {
         let headers = self.build_2fa_headers(true);
 
-        Ok(self.client
+        let req = self.client
             .get("https://gsa.apple.com/auth")
             .headers(headers.await)
             .header("Accept", "application/json")
-            .send().await?
-            .json::<AuthenticationExtras>().await?)
+            .send().await?;
+        let status = req.status().as_u16();
+        let mut new_state = req.json::<AuthenticationExtras>().await?;
+        if status == 201 {
+            new_state.new_state = Some(LoginState::NeedsSMS2FAVerification(VerifyBody {
+                phone_number: PhoneNumber {
+                    id: new_state.trusted_phone_numbers.first().unwrap().id
+                },
+                mode: "sms".to_string(),
+                security_code: None
+            }));
+        }
+
+        Ok(new_state)
     }
 
     pub async fn verify_2fa(&self, code: String) -> Result<LoginState, Error> {
