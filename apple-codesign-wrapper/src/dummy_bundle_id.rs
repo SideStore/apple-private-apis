@@ -105,6 +105,6 @@ mod tests {
     fn add_dummy_bundle_ids() {
         crate::tests::logger();
 
-        super::add_dummy_bundle_ids("TODO.app", "TODO");
+        super::add_dummy_bundle_ids("src/test.app", "com.wesbryie.test");
     }
 }
