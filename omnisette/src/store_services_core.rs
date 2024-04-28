@@ -432,10 +432,7 @@ mod tests {
     use log::info;
     use std::path::PathBuf;
 
-    // Commented this out because its failing, but also I'm pretty sure omnisette is obsolite anyways.
-    // -WesleyBryie
-
-    /* #[cfg(not(feature = "async"))]
+    #[cfg(not(feature = "async"))]
     #[test]
     fn fetch_anisette_ssc() -> Result<()> {
         crate::tests::init_logger();
@@ -449,7 +446,7 @@ mod tests {
             provider.provider.get_authentication_headers()?
         );
         Ok(())
-    } */
+    }
 
     #[cfg(feature = "async")]
     #[tokio::test]
