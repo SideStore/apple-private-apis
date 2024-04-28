@@ -15,7 +15,7 @@ impl AnisetteData {
                 .set_configuration_path(PathBuf::new().join("anisette_test"))
                 .set_anisette_url("https://ani.f1sh.me".to_string()),
         ) {
-            Ok(mut b) => match b.get_authentication_headers() {
+            Ok(mut b) => match b.provider.get_authentication_headers() {
                 Ok(b) => b,
                 Err(_) => return Err(Error::ErrorGettingAnisette),
             },

@@ -42,7 +42,7 @@ impl std::fmt::Display for AnisetteMetaError {
 
 impl std::error::Error for AnisetteMetaError {}
 
-pub const DEFAULT_ANISETTE_URL: &str = "https://ani.f1sh.me/";
+pub const DEFAULT_ANISETTE_URL: &str = "https://ani.wesbryie.com/";
 
 #[cfg(feature = "remote-anisette-v3")]
 pub const DEFAULT_ANISETTE_URL_V3: &str = "https://ani.sidestore.io";
