@@ -88,10 +88,10 @@ mod tests {
         crate::tests::logger();
 
         super::sign_app(
-            "TODO.app",
-            "TODO",
-            std::fs::read("TODO.p12").unwrap().as_slice(),
-            "",
+            "src/test.app",
+            "com.wesbryie.test.95J8WZ4TN8",
+            std::fs::read("src/cert.p12").unwrap().as_slice(),
+            "...",
         )
         .unwrap();
     }
